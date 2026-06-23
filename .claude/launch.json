@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/Users/paulbelliveau/Documents/C84 Claude Code/server.py"],
+      "port": 4321
+    }
+  ]
+}

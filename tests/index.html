@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Champions '84 — dice engine tests</title>
+  <style>
+    body { font-family: ui-monospace, Menlo, monospace; background:#0f1320; color:#eef1fb; padding:24px; }
+    h1 { font-size:18px; }
+    .pass { color:#34d27b; } .fail { color:#ff6b6b; }
+    .row { padding:3px 0; } .err { color:#ffcb1f; margin-left:18px; }
+    #summary { font-size:16px; font-weight:bold; margin:14px 0; }
+  </style>
+</head>
+<body>
+  <h1>Dice engine tests</h1>
+  <div id="summary">Running…</div>
+  <div id="out"></div>
+  <script type="module">
+    import { runAll } from "./dice.test.js";
+    const { passed, total, results } = runAll();
+    document.getElementById("summary").textContent = `${passed} / ${total} passed`;
+    document.getElementById("summary").className = passed === total ? "pass" : "fail";
+    const out = document.getElementById("out");
+    for (const r of results) {
+      const div = document.createElement("div");
+      div.className = "row " + (r.pass ? "pass" : "fail");
+      div.textContent = (r.pass ? "✓ " : "✗ ") + r.name;
+      out.appendChild(div);
+      if (!r.pass) {
+        const e = document.createElement("div");
+        e.className = "err"; e.textContent = r.error;
+        out.appendChild(e);
+      }
+    }
+    window.__results = { passed, total, results };
+  </script>
+</body>
+</html>

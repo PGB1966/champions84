@@ -1,0 +1,410 @@
+// Data-driven character sheet renderer.
+// Every section reads from the character object and degrades gracefully when a
+// field is absent, so partially-defined characters still render what they have.
+import { parseDiceCount } from "./dice/dice.js";
+import { pulledEndCost } from "./dice/hero.js";
+import { renderVpp } from "./vpp.js";
+
+// --- tiny DOM helper -------------------------------------------------------
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k === "dataset") Object.assign(node.dataset, v);
+    else if (k.startsWith("on") && typeof v === "function") {
+      node.addEventListener(k.slice(2).toLowerCase(), v);
+    } else if (v !== null && v !== undefined && v !== false) {
+      node.setAttribute(k, v);
+    }
+  }
+  for (const child of [].concat(children)) {
+    if (child == null || child === false) continue;
+    node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+// Characteristic display order & full names (Hero System 6E primary stats).
+const CHAR_ORDER = ["STR", "DEX", "CON", "BODY", "INT", "EGO", "PRE", "SPD"];
+const CHAR_NAMES = {
+  STR: "Strength", DEX: "Dexterity", CON: "Constitution", BODY: "Body",
+  INT: "Intelligence", EGO: "Ego", PRE: "Presence", SPD: "Speed"
+};
+const DERIVED_ORDER = ["OCV", "DCV", "OMCV", "DMCV", "PD", "ED", "rPD", "rED", "MD"];
+const DERIVED_NAMES = {
+  OCV: "Offensive Combat Value", DCV: "Defensive Combat Value",
+  OMCV: "Offensive Mental CV", DMCV: "Defensive Mental CV",
+  PD: "Physical Defense", ED: "Energy Defense",
+  rPD: "Resistant PD", rED: "Resistant ED", MD: "Mental Defense"
+};
+
+// Characteristic Roll = 9 + round(CHAR/5). Made for these stats; BODY and SPD
+// don't use a characteristic roll. PER Roll uses the same formula on INT.
+const ROLLABLE_CHARS = ["STR", "DEX", "CON", "INT", "EGO", "PRE"];
+export function charRoll(value) {
+  return 9 + Math.round(value / 5);
+}
+
+// 6E standard movement (meters) every character has without spending points.
+const STANDARD_MOVEMENT = { Running: 12, Leaping: 4, Swimming: 4 };
+const MOVEMENT_ORDER = ["Running", "Leaping", "Swimming"];
+
+// `rolls` (optional) maps a key to its characteristic roll, shown as "13-".
+// `onRoll(key, target)` (optional) makes cells that have a roll clickable.
+function statGrid(values, order, names, className, rolls, onRoll) {
+  const cells = order
+    .filter((key) => values[key] !== undefined)
+    .map((key) => {
+      const target = rolls ? rolls[key] : null;
+      const children = [
+        el("span", { class: "stat-label" }, key),
+        el("span", { class: "stat-value" }, String(values[key]))
+      ];
+      if (target != null) children.push(el("span", { class: "stat-roll" }, `${target}-`));
+
+      const clickable = target != null && typeof onRoll === "function";
+      const attrs = {
+        class: "stat" + (clickable ? " stat-actionable" : ""),
+        title: clickable ? `Roll ${key} ${target}-` : (names[key] || key)
+      };
+      if (clickable) {
+        const fire = () => onRoll(key, target);
+        attrs.role = "button";
+        attrs.tabindex = "0";
+        attrs.onClick = fire;
+        attrs.onKeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fire(); } };
+      }
+      return el("div", attrs, children);
+    });
+  return el("div", { class: className }, cells);
+}
+
+function movementGrid(movement, order) {
+  return el("div", { class: "stat-grid" },
+    order
+      .filter((k) => movement[k] != null)
+      .map((k) =>
+        el("div", { class: "stat", title: `${k} (meters per Phase)` }, [
+          el("span", { class: "stat-label" }, k),
+          el("span", { class: "stat-value" }, `${movement[k]}m`)
+        ])
+      ));
+}
+
+// XP tracker. Earned and Spent are tracked separately; Unspent is derived
+// (earned − spent). Spent can't exceed earned, and lowering earned pulls spent
+// down with it. `onChange` (reused from the health trackers) re-renders.
+function xpTracker(character, onChange) {
+  const xp = character.xp;
+  function adjust(field, delta) {
+    let { earned, spent } = xp;
+    if (field === "earned") earned = Math.max(0, earned + delta);
+    else spent = Math.max(0, spent + delta);
+    if (spent > earned) spent = earned; // can't spend XP you haven't earned
+    if (earned === xp.earned && spent === xp.spent) return;
+    xp.earned = earned;
+    xp.spent = spent;
+    if (typeof onChange === "function") onChange(character, "XP", xp);
+  }
+
+  function line(label, field) {
+    return el("div", { class: "xp-line" }, [
+      el("span", { class: "xp-label" }, label),
+      el("span", { class: "xp-num" }, String(xp[field])),
+      el("div", { class: "track-controls" }, [
+        el("button", { class: "step", type: "button", onClick: () => adjust(field, -5) }, "−5"),
+        el("button", { class: "step", type: "button", onClick: () => adjust(field, -1) }, "−1"),
+        el("button", { class: "step", type: "button", onClick: () => adjust(field, 1) }, "+1"),
+        el("button", { class: "step", type: "button", onClick: () => adjust(field, 5) }, "+5")
+      ])
+    ]);
+  }
+
+  return el("div", { class: "xp-block" }, [
+    line("Earned", "earned"),
+    line("Spent", "spent"),
+    el("div", { class: "xp-line xp-unspent" }, [
+      el("span", { class: "xp-label" }, "Unspent"),
+      el("span", { class: "xp-value" }, String(xp.earned - xp.spent))
+    ])
+  ]);
+}
+
+// --- health trackers (STUN / BODY / END) with +/- controls -----------------
+// `onChange(character, kind, newCurrent)` is called after a clamp-adjusted edit
+// so the host can persist / re-render. Pure display otherwise.
+function healthTracker(character, kind, pool, onChange) {
+  const pct = pool.max > 0 ? Math.max(0, Math.min(100, (pool.current / pool.max) * 100)) : 0;
+  const valueLabel = el("span", { class: "track-value" }, `${pool.current} / ${pool.max}`);
+  const fill = el("div", { class: `track-fill track-${kind.toLowerCase()}`, style: `width:${pct}%` });
+
+  function adjust(delta) {
+    const next = Math.max(0, Math.min(pool.max, pool.current + delta));
+    if (next === pool.current) return;
+    pool.current = next;
+    if (typeof onChange === "function") onChange(character, kind, next);
+  }
+
+  return el("div", { class: "tracker" }, [
+    el("div", { class: "track-head" }, [
+      el("span", { class: "track-label" }, kind),
+      valueLabel
+    ]),
+    el("div", { class: "track-bar" }, [fill]),
+    el("div", { class: "track-controls" }, [
+      el("button", { class: "step", type: "button", "aria-label": `${kind} -5`, onClick: () => adjust(-5) }, "−5"),
+      el("button", { class: "step", type: "button", "aria-label": `${kind} -1`, onClick: () => adjust(-1) }, "−1"),
+      el("button", { class: "step", type: "button", "aria-label": `${kind} +1`, onClick: () => adjust(1) }, "+1"),
+      el("button", { class: "step", type: "button", "aria-label": `${kind} +5`, onClick: () => adjust(5) }, "+5"),
+      el("button", { class: "step step-full", type: "button", onClick: () => adjust(pool.max) }, "Full")
+    ])
+  ]);
+}
+
+// --- powers ----------------------------------------------------------------
+// `onRoll(character, power)` (when provided) wires a Roll button that resolves
+// the attack through the dice engine.
+function powerCard(power, character, onRoll) {
+  const meta = [];
+  if (power.type) meta.push(power.type);
+  if (power.totalDice) meta.push(power.totalDice);
+  if (power.damageType) meta.push(power.damageType);
+  if (power.endCost != null) meta.push(`${power.endCost} END`);
+  if (power.cost) meta.push(power.cost);
+
+  const mods = [];
+  if (power.ocvMod != null) mods.push(`OCV ${power.ocvMod >= 0 ? "+" : ""}${power.ocvMod}`);
+  if (power.knockbackBonus != null) mods.push(`KB +${power.knockbackBonus}`);
+  if (power.autofire) mods.push(`Autofire ${power.autofire.shots} (max ${power.autofire.maxHits})`);
+  if (power.alwaysOn) mods.push("always on");
+  (power.conditions || []).forEach((c) => mods.push(c.replace(/_/g, " ")));
+
+  const isAttack = Boolean(power.damageType) || power.rollType === "attackRoll";
+  const canRoll = typeof onRoll === "function" && power.totalDice && (isAttack || power.rollType);
+
+  return el("div", { class: "power-card" }, [
+    el("div", { class: "power-top" }, [
+      el("span", { class: "power-name" }, power.name),
+      el("span", { class: "power-dice" }, power.totalDice || "")
+    ]),
+    el("div", { class: "power-meta" }, meta.join(" · ")),
+    power.description ? el("p", { class: "power-desc" }, power.description) : null,
+    mods.length ? el("div", { class: "power-mods" }, mods.map((m) => el("span", { class: "chip" }, m))) : null,
+    canRoll ? rollControls(power, character, onRoll, isAttack) : null
+  ]);
+}
+
+// Roll affordance for a power. Attacks get the pull-the-punch dice control;
+// non-attack effect powers (Aid/Heal/Telepathy/…) get a plain Roll button.
+function rollControls(power, character, onRoll, isAttack) {
+  if (!isAttack) {
+    return el("button", { class: "roll-btn", type: "button", onClick: () => onRoll(character, power) }, "Roll");
+  }
+  let fullDice;
+  try { fullDice = parseDiceCount(power.totalDice); }
+  catch { return el("button", { class: "roll-btn", type: "button", onClick: () => onRoll(character, power) }, "Roll Attack"); }
+
+  const clamp = (v) => Math.max(1, Math.min(fullDice, parseInt(v, 10) || 1));
+  const input = el("input", { type: "number", class: "num dice-input", min: "1", max: String(fullDice), value: String(fullDice) });
+  const preview = el("span", { class: "end-preview" });
+
+  function refresh() {
+    const n = clamp(input.value);
+    const end = pulledEndCost(power, n);
+    preview.textContent = n < fullDice
+      ? `${n}/${fullDice}d6 · ${end} END (pulled)`
+      : `${end} END`;
+  }
+  input.addEventListener("input", refresh);
+  refresh();
+
+  const btn = el("button", { class: "roll-btn", type: "button",
+    onClick: () => onRoll(character, power, clamp(input.value)) }, "Roll Attack");
+
+  return el("div", { class: "power-roll" }, [
+    el("label", { class: "field" }, [el("span", {}, "Dice"), input]),
+    preview,
+    btn
+  ]);
+}
+
+function section(title, body) {
+  return el("section", { class: "sheet-section" }, [
+    el("h2", { class: "section-title" }, title),
+    body
+  ]);
+}
+
+// --- GM dashboard ----------------------------------------------------------
+// Compact card per PC: name (links to the full sheet), quick combat stats, and
+// the STUN/BODY/END trackers (editable, so the GM can track damage live).
+// `items` = [{ character, slug }].
+export function renderDashboard(items, { onHealthChange } = {}) {
+  const root = el("div", { class: "dashboard" });
+  root.appendChild(el("p", { class: "dash-intro" },
+    "All four PCs at a glance — adjust trackers as combat unfolds. Use the Dice Tools panel for NPC rolls (flip on “GM private” to keep them off the shared log)."));
+
+  const grid = el("div", { class: "dash-grid" }, items.map(({ character, slug }) => {
+    const d = character.derived || {};
+    const quick = ["OCV", "DCV", "PD", "ED", "rPD", "rED"]
+      .filter((k) => d[k] != null)
+      .map((k) => el("span", { class: "chip" }, `${k} ${d[k]}`));
+    const trackers = ["STUN", "BODY", "END"]
+      .filter((k) => character.health && character.health[k])
+      .map((k) => healthTracker(character, k, character.health[k], onHealthChange));
+
+    return el("div", { class: "dash-card" }, [
+      el("div", { class: "dash-card-head" }, [
+        el("a", { class: "dash-name", href: `#/${slug}` }, character.name),
+        character.player ? el("span", { class: "chip" }, character.player) : null
+      ]),
+      quick.length ? el("div", { class: "dash-quick" }, quick) : null,
+      el("div", { class: "trackers" }, trackers)
+    ]);
+  }));
+  root.appendChild(grid);
+  return root;
+}
+
+// --- public API ------------------------------------------------------------
+// --- martial arts maneuvers ------------------------------------------------
+// Offensive maneuvers (with totalDice) roll via onRollPower as a power-shaped
+// object; defensive ones (Dodge, Block) just display their CV modifiers.
+function maneuverRow(m, character, onRollPower) {
+  const mods = [];
+  mods.push(`Phase ${m.phase || "½"}`);
+  if (m.ocvMod != null) mods.push(`OCV ${m.ocvMod >= 0 ? "+" : ""}${m.ocvMod}`);
+  if (m.dcvMod != null) mods.push(`DCV ${m.dcvMod >= 0 ? "+" : ""}${m.dcvMod}`);
+  if (m.abort) mods.push("Abort");
+
+  const offensive = Boolean(m.totalDice) && !m.defensive;
+  return el("div", { class: "maneuver" }, [
+    el("div", { class: "maneuver-info" }, [
+      el("div", { class: "maneuver-top" }, [
+        el("span", { class: "vpp-name" }, m.name),
+        m.totalDice ? el("span", { class: "power-dice" }, m.totalDice) : null
+      ]),
+      el("div", { class: "power-mods" }, mods.map((x) => el("span", { class: "chip" }, x))),
+      m.effect ? el("span", { class: "vpp-power-meta" }, m.effect) : null
+    ]),
+    offensive && typeof onRollPower === "function"
+      ? el("button", { class: "roll-btn", type: "button", onClick: () => onRollPower(character, m) }, "Strike")
+      : null
+  ]);
+}
+
+function plainList(items) {
+  return el("ul", { class: "plain-list" }, items.map((s) => el("li", {}, s)));
+}
+
+export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, vppHandlers } = {}) {
+  const root = el("article", { class: "sheet", dataset: { characterId: character.id } });
+
+  // Identity header
+  root.appendChild(
+    el("div", { class: "sheet-header" }, [
+      el("div", {}, [
+        el("h2", { class: "char-name" }, character.name),
+        character.realName ? el("p", { class: "char-real" }, character.realName) : null
+      ]),
+      el("div", { class: "char-tags" }, [
+        character.player ? el("span", { class: "chip" }, character.player) : null,
+        character.phases ? el("span", { class: "chip" }, `Phases ${character.phases.join(", ")}`) : null
+      ])
+    ])
+  );
+
+  if (character.health) {
+    const trackers = ["STUN", "BODY", "END"]
+      .filter((k) => character.health[k])
+      .map((k) => healthTracker(character, k, character.health[k], onHealthChange));
+    root.appendChild(section("Status", el("div", { class: "trackers" }, trackers)));
+  }
+
+  if (character.characteristics) {
+    const c = character.characteristics;
+    const rolls = {};
+    for (const k of ROLLABLE_CHARS) if (c[k] != null) rolls[k] = charRoll(c[k]);
+
+    const statRoll = typeof onRollCheck === "function"
+      ? (key, target) => onRollCheck(character, key, target)
+      : undefined;
+    const body = el("div", {}, [statGrid(c, CHAR_ORDER, CHAR_NAMES, "stat-grid", rolls, statRoll)]);
+
+    if (c.INT != null) {
+      const perTarget = charRoll(c.INT);
+      const perAttrs = { class: "roll-note", title: `Roll PER ${perTarget}-` };
+      if (typeof onRollCheck === "function") {
+        const fire = () => onRollCheck(character, "PER", perTarget);
+        perAttrs.class = "roll-note roll-note-actionable";
+        perAttrs.role = "button";
+        perAttrs.tabindex = "0";
+        perAttrs.onClick = fire;
+        perAttrs.onKeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fire(); } };
+      }
+      body.appendChild(el("p", perAttrs, `PER Roll ${perTarget}- (INT-based)`));
+    }
+    root.appendChild(section("Characteristics", body));
+  }
+
+  if (character.derived) {
+    root.appendChild(section("Combat & Defenses",
+      statGrid(character.derived, DERIVED_ORDER, DERIVED_NAMES, "stat-grid derived-grid")));
+  }
+
+  if (character.maneuvers && character.maneuvers.length) {
+    root.appendChild(section("Martial Arts",
+      el("div", { class: "maneuver-list" },
+        character.maneuvers.map((m) => maneuverRow(m, character, onRollPower)))));
+  }
+
+  // Movement — 6E standard for everyone, overridable per character.
+  const movement = { ...STANDARD_MOVEMENT, ...(character.movement || {}) };
+  const moveOrder = [...MOVEMENT_ORDER, ...Object.keys(movement).filter((k) => !MOVEMENT_ORDER.includes(k))];
+  root.appendChild(section("Movement", movementGrid(movement, moveOrder)));
+
+  if (character.xp) {
+    root.appendChild(section("Experience", xpTracker(character, onHealthChange)));
+  }
+
+  if (character.powers && character.powers.length) {
+    root.appendChild(section("Powers",
+      el("div", { class: "power-list" },
+        character.powers.map((p) => powerCard(p, character, onRollPower)))));
+  }
+
+  // Day/Night power sets (Irie Blaze): a toggle picks the active set; a shared
+  // set (if any) is always shown.
+  if (character.powerSets) {
+    const ps = character.powerSets;
+    const cur = ps.sets[ps.current] ? ps.current : Object.keys(ps.sets)[0];
+    const toggle = el("div", { class: "daynight-toggle" }, Object.keys(ps.sets).map((key) => {
+      const isCur = key === cur;
+      const attrs = { class: "seg" + (isCur ? " active" : ""), type: "button" };
+      if (!isCur && typeof onTogglePowerSet === "function") attrs.onClick = () => onTogglePowerSet(character, key);
+      return el("button", attrs, ps.sets[key].label);
+    }));
+    const body = el("div", {}, [
+      toggle,
+      el("div", { class: "power-list" }, ps.sets[cur].powers.map((p) => powerCard(p, character, onRollPower)))
+    ]);
+    if (ps.shared && ps.shared.powers.length) {
+      body.appendChild(el("h3", { class: "vpp-subtitle" }, ps.shared.label || "Always Available"));
+      body.appendChild(el("div", { class: "power-list" }, ps.shared.powers.map((p) => powerCard(p, character, onRollPower))));
+    }
+    root.appendChild(section("Powers", body));
+  }
+
+  if (character.vpp) {
+    root.appendChild(section("Variable Power Pool", renderVpp(character, vppHandlers)));
+  }
+
+  if (character.skills && character.skills.length) {
+    root.appendChild(section("Skills", plainList(character.skills)));
+  }
+  if (character.complications && character.complications.length) {
+    root.appendChild(section("Complications", plainList(character.complications)));
+  }
+
+  return root;
+}

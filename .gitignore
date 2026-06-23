@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Editor / OS cruft
+*.swp
+*~
+
+# Machine-local Claude Code settings (may contain local permissions)
+.claude/settings.local.json
+
+# Local dev only — not needed on GitHub Pages
+# (server.py and .claude/launch.json are kept; they're harmless and handy.)
