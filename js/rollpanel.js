@@ -1,9 +1,9 @@
-// Right-hand roll panel: a shared Target DCV, manual dice tools, and the live
-// roll-log feed. The manual tools exercise every resolver directly; power
-// buttons on the sheet feed the same log.
-import { rollToHit, rollNormalDamage, rollKillingDamage, rollKnockback } from "./dice/hero.js";
+// Right-hand roll panel: a read-only phase indicator, manual dice tools, and
+// the live roll-log feed. Attack/to-hit rolls report the DCV they hit (no
+// target entry needed). The GM "private rolls" switch only appears in GM mode.
+import { rollToHit, rollNormalDamage, rollKillingDamage, rollKnockback, rollEffectDice } from "./dice/hero.js";
 import { describeToHit, describeNormal, describeKilling, describeKnockback } from "./dice/format.js";
-import { addRoll, subscribe, getRolls, clearRolls, subscribeStatus, setPrivateMode, getPrivateMode } from "./log.js";
+import { addRoll, subscribe, getRolls, clearRolls, subscribeStatus, setPrivateMode, getPrivateMode, subscribePhase } from "./log.js";
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -53,65 +53,81 @@ function logEntry(rec) {
   ]);
 }
 
-export function buildRollPanel() {
-  const target = numField("Target DCV", 0);
+// Read-only phase indicator (1–12). Synced; the GM drives it from the dashboard.
+function buildPhaseIndicator() {
+  const seg = el("span", { class: "phase-seg" });
+  const bar = el("div", { class: "phase-strip" });
+  for (let i = 1; i <= 12; i++) bar.appendChild(el("span", { class: "phase-pip", dataset: String(i) }));
+  function paint(n) {
+    seg.textContent = `Phase ${n} / 12`;
+    [...bar.children].forEach((pip, idx) => pip.classList.toggle("on", idx < n));
+  }
+  subscribePhase(paint);
+  return el("div", { class: "phase-box" }, [el("div", { class: "phase-head" }, [el("span", { class: "tool-title" }, "Phase"), seg]), bar]);
+}
 
-  // GM private rolls: when on, this screen's rolls stay local (not shared).
-  const privCheckbox = el("input", { type: "checkbox", class: "priv-check" });
-  privCheckbox.checked = getPrivateMode();
+export function buildRollPanel({ isGM = false, getRoller } = {}) {
   const panel = el("aside", { class: "roll-panel" });
-  function refreshPrivClass() { panel.classList.toggle("private-on", privCheckbox.checked); }
-  privCheckbox.addEventListener("change", () => { setPrivateMode(privCheckbox.checked); refreshPrivClass(); });
-  const privToggle = el("label", { class: "priv-toggle", title: "When on, your rolls stay on this screen only — not posted to the shared log." }, [
-    privCheckbox, el("span", {}, "🔒 GM private rolls (this screen only)")
-  ]);
+  // Who a manual roll is attributed to (current player's screen, or GM).
+  const roller = () => (typeof getRoller === "function" ? getRoller() : "Dice Tools");
+
+  // GM private rolls toggle (GM mode only).
+  let privToggle = null;
+  if (isGM) {
+    const privCheckbox = el("input", { type: "checkbox", class: "priv-check" });
+    privCheckbox.checked = getPrivateMode();
+    function refreshPriv() { panel.classList.toggle("private-on", privCheckbox.checked); }
+    privCheckbox.addEventListener("change", () => { setPrivateMode(privCheckbox.checked); refreshPriv(); });
+    privToggle = el("label", { class: "priv-toggle", title: "When on, your rolls stay on this screen only — not posted to the shared log." },
+      [privCheckbox, el("span", {}, "🔒 GM private rolls (this screen only)")]);
+    refreshPriv();
+  }
 
   const tools = el("div", { class: "roll-tools" }, [
+    buildPhaseIndicator(),
     el("h2", { class: "section-title" }, "Dice Tools"),
     privToggle,
-    el("div", { class: "tool" }, [
-      el("div", { class: "tool-title" }, "Shared target"),
-      el("div", { class: "tool-row" }, [target.wrap])
-    ]),
-    tool("To-hit (3d6)", [
-      { label: "OCV", value: 0 }, { label: "DCV", value: 0 }
-    ], ([ocv, dcv]) => {
-      const r = rollToHit({ ocv, dcv });
-      addRoll({ who: "Dice Tools", label: "To-hit", lines: [describeToHit(r)] });
+    tool("To-hit (3d6)", [{ label: "OCV", value: 0 }], ([ocv]) => {
+      addRoll({ who: roller(), label: "To-hit", lines: [describeToHit(rollToHit({ ocv }))] });
     }),
-    tool("Normal damage", [{ label: "Dice (d6)", value: 8 }], ([dice]) => {
-      const r = rollNormalDamage({ dice });
-      addRoll({ who: "Dice Tools", label: "Normal damage", lines: [describeNormal(r)] });
+    tool("Roll dice", [{ label: "Dice (d6)", value: 3 }], ([dice]) => {
+      const r = rollEffectDice({ dice: `${dice}d6` });
+      addRoll({ who: roller(), label: `${dice}d6 roll`, lines: [`${dice}d6 [${r.faces.join(",")}] = ${r.total}`] });
+    }),
+    tool("Normal damage", [{ label: "Dice (d6)", value: 3 }], ([dice]) => {
+      addRoll({ who: roller(), label: "Normal damage", lines: [describeNormal(rollNormalDamage({ dice }))] });
     }),
     tool("Killing damage", [{ label: "Dice (d6)", value: 2 }], ([dice]) => {
-      const r = rollKillingDamage({ dice });
-      addRoll({ who: "Dice Tools", label: "Killing damage", lines: [describeKilling(r)] });
+      addRoll({ who: roller(), label: "Killing damage", lines: [describeKilling(rollKillingDamage({ dice }))] });
     }),
     tool("Knockback", [{ label: "BODY done", value: 0 }], ([body]) => {
-      const r = rollKnockback({ body });
-      addRoll({ who: "Dice Tools", label: "Knockback", lines: [describeKnockback(r)] });
-    })
+      addRoll({ who: roller(), label: "Knockback", lines: [describeKnockback(rollKnockback({ body }))] });
+    }),
+    el("div", { class: "tool" }, [
+      el("div", { class: "tool-title" }, "Heroic Action Points" ),
+      el("div", { class: "tool-row" }, [
+        el("button", { class: "roll-btn", type: "button", onClick: () => {
+          const r = rollEffectDice({ dice: "2d6" });
+          addRoll({ who: roller(), label: "Heroic Action Points", lines: [`HAP 2d6 [${r.faces.join(",")}] = ${r.total}`] });
+        } }, "Roll HAP (2d6)")
+      ])
+    ])
   ]);
 
   const feed = el("div", { class: "log-feed" });
   function repaint() {
     feed.replaceChildren(...getRolls().map(logEntry));
-    if (getRolls().length === 0) {
-      feed.appendChild(el("p", { class: "log-empty" }, "No rolls yet."));
-    }
+    if (getRolls().length === 0) feed.appendChild(el("p", { class: "log-empty" }, "No rolls yet."));
   }
   subscribe(repaint);
   repaint();
 
-  // Live (Firebase) vs Local (this browser only) indicator.
   const status = el("span", { class: "log-status" });
   subscribeStatus((mode) => {
     const live = mode === "firebase";
     status.className = "log-status" + (live ? " live" : "");
     status.textContent = live ? "● Live" : "● Local";
-    status.title = live
-      ? "Shared roll log — synced via Firebase"
-      : "Local only — Firebase not configured (see firebase-config.js)";
+    status.title = live ? "Shared roll log — synced via Firebase" : "Local only — Firebase not configured";
   });
 
   const log = el("div", { class: "roll-log" }, [
@@ -124,6 +140,5 @@ export function buildRollPanel() {
   ]);
 
   panel.append(tools, log);
-  refreshPrivClass();
-  return { element: panel, getTargetDcv: () => target.get() };
+  return { element: panel };
 }

@@ -4,6 +4,7 @@
 import { parseDiceCount } from "./dice/dice.js";
 import { pulledEndCost } from "./dice/hero.js";
 import { renderVpp } from "./vpp.js";
+import { subscribePhase, getPhase } from "./log.js";
 
 // --- tiny DOM helper -------------------------------------------------------
 function el(tag, attrs = {}, children = []) {
@@ -51,20 +52,24 @@ const MOVEMENT_ORDER = ["Running", "Leaping", "Swimming"];
 
 // `rolls` (optional) maps a key to its characteristic roll, shown as "13-".
 // `onRoll(key, target)` (optional) makes cells that have a roll clickable.
-function statGrid(values, order, names, className, rolls, onRoll) {
+// `boosts` (optional) maps a key to a temporary boost amount; the cell then
+// shows the boosted value with the base in a sub-note.
+function statGrid(values, order, names, className, rolls, onRoll, boosts) {
   const cells = order
     .filter((key) => values[key] !== undefined)
     .map((key) => {
       const target = rolls ? rolls[key] : null;
+      const boost = boosts ? (boosts[key] || 0) : 0;
       const children = [
         el("span", { class: "stat-label" }, key),
         el("span", { class: "stat-value" }, String(values[key]))
       ];
       if (target != null) children.push(el("span", { class: "stat-roll" }, `${target}-`));
+      if (boost) children.push(el("span", { class: "stat-boost" }, `+${boost} (base ${values[key] - boost})`));
 
       const clickable = target != null && typeof onRoll === "function";
       const attrs = {
-        class: "stat" + (clickable ? " stat-actionable" : ""),
+        class: "stat" + (clickable ? " stat-actionable" : "") + (boost ? " boosted" : ""),
         title: clickable ? `Roll ${key} ${target}-` : (names[key] || key)
       };
       if (clickable) {
@@ -239,10 +244,30 @@ function section(title, body) {
 // Compact card per PC: name (links to the full sheet), quick combat stats, and
 // the STUN/BODY/END trackers (editable, so the GM can track damage live).
 // `items` = [{ character, slug }].
-export function renderDashboard(items, { onHealthChange } = {}) {
+export function renderDashboard(items, { onHealthChange, onSetPhase } = {}) {
   const root = el("div", { class: "dashboard" });
   root.appendChild(el("p", { class: "dash-intro" },
     "All four PCs at a glance — adjust trackers as combat unfolds. Use the Dice Tools panel for NPC rolls (flip on “GM private” to keep them off the shared log)."));
+
+  // Phase tracker — GM drives this; players see it live in their roll panel.
+  if (typeof onSetPhase === "function") {
+    const label = el("span", { class: "phase-seg" });
+    const slider = el("input", { type: "range", min: "1", max: "12", step: "1", class: "phase-slider" });
+    const pips = el("div", { class: "phase-strip" });
+    for (let i = 1; i <= 12; i++) pips.appendChild(el("span", { class: "phase-pip" }));
+    function paint(n) {
+      slider.value = String(n);
+      label.textContent = `Phase ${n} / 12`;
+      [...pips.children].forEach((p, idx) => p.classList.toggle("on", idx < n));
+    }
+    slider.addEventListener("input", () => onSetPhase(parseInt(slider.value, 10)));
+    subscribePhase(paint);
+    paint(getPhase());
+    root.appendChild(el("div", { class: "dash-phase" }, [
+      el("div", { class: "phase-head" }, [el("h3", { class: "vpp-subtitle" }, "Phase Tracker"), label]),
+      slider, pips
+    ]));
+  }
 
   const grid = el("div", { class: "dash-grid" }, items.map(({ character, slug }) => {
     const d = character.derived || {};
@@ -297,7 +322,7 @@ function plainList(items) {
   return el("ul", { class: "plain-list" }, items.map((s) => el("li", {}, s)));
 }
 
-export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, vppHandlers } = {}) {
+export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers } = {}) {
   const root = el("article", { class: "sheet", dataset: { characterId: character.id } });
 
   // Identity header
@@ -318,21 +343,43 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
     const trackers = ["STUN", "BODY", "END"]
       .filter((k) => character.health[k])
       .map((k) => healthTracker(character, k, character.health[k], onHealthChange));
-    root.appendChild(section("Status", el("div", { class: "trackers" }, trackers)));
+    const body = el("div", {}, [el("div", { class: "trackers" }, trackers)]);
+    if (character.rec != null && typeof onRecover === "function") {
+      body.appendChild(el("div", { class: "recover-row" }, [
+        el("button", { class: "roll-btn recover-btn", type: "button", title: "Recover STUN and END by REC",
+          onClick: () => onRecover(character) }, `Recover (REC ${character.rec})`)
+      ]));
+    }
+    root.appendChild(section("Status", body));
   }
 
   if (character.characteristics) {
     const c = character.characteristics;
+    const boosts = character.boosts || {};
+    // Effective (boosted) values; rolls recompute on the boosted figure.
+    const eff = {};
+    for (const k of Object.keys(c)) eff[k] = c[k] + (boosts[k] || 0);
     const rolls = {};
-    for (const k of ROLLABLE_CHARS) if (c[k] != null) rolls[k] = charRoll(c[k]);
+    for (const k of ROLLABLE_CHARS) if (c[k] != null) rolls[k] = charRoll(eff[k]);
 
     const statRoll = typeof onRollCheck === "function"
       ? (key, target) => onRollCheck(character, key, target)
       : undefined;
-    const body = el("div", {}, [statGrid(c, CHAR_ORDER, CHAR_NAMES, "stat-grid", rolls, statRoll)]);
+    const body = el("div", {}, [statGrid(eff, CHAR_ORDER, CHAR_NAMES, "stat-grid", rolls, statRoll, boosts)]);
+
+    const activeBoosts = Object.keys(boosts).filter((k) => boosts[k]);
+    if (activeBoosts.length) {
+      const note = el("p", { class: "roll-note" },
+        "Active self-boosts shown above (Aid fades over time). OCV/DCV/defenses are not auto-recalculated.");
+      if (typeof onClearBoosts === "function") {
+        note.appendChild(document.createTextNode("  "));
+        note.appendChild(el("button", { class: "ghost-btn", type: "button", onClick: () => onClearBoosts(character) }, "Clear boosts"));
+      }
+      body.appendChild(note);
+    }
 
     if (c.INT != null) {
-      const perTarget = charRoll(c.INT);
+      const perTarget = charRoll(eff.INT);
       const perAttrs = { class: "roll-note", title: `Roll PER ${perTarget}-` };
       if (typeof onRollCheck === "function") {
         const fire = () => onRollCheck(character, "PER", perTarget);

@@ -23,6 +23,35 @@ let privateMode = false; // GM "private rolls" switch
 let fbPush = null;       // (payload) => void   — push a public roll to RTDB
 let fbRemove = null;     // () => void          — clear the shared log
 
+// Shared phase tracker (1–12). GM writes; everyone reads.
+let phase = 1;
+let fbSetPhase = null;             // (n) => void — write phase to RTDB
+const phaseListeners = new Set();  // (n) => void
+
+function notifyPhase() {
+  for (const fn of phaseListeners) fn(phase);
+}
+
+export function getPhase() {
+  return phase;
+}
+
+export function setPhase(n) {
+  const v = Math.max(1, Math.min(12, Math.round(n) || 1));
+  if (mode === "firebase" && fbSetPhase) {
+    fbSetPhase(v); // onValue mirrors it back (locally first)
+    return;
+  }
+  phase = v;
+  notifyPhase();
+}
+
+export function subscribePhase(fn) {
+  phaseListeners.add(fn);
+  fn(phase);
+  return () => phaseListeners.delete(fn);
+}
+
 // Merge the synced (public) and local feeds, newest first, capped.
 function allRolls() {
   const merged = mode === "firebase" ? synced.concat(local) : local.slice();
@@ -108,15 +137,17 @@ export async function initLog() {
   try {
     const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
     const { initializeApp } = await import(`${base}/firebase-app.js`);
-    const { getDatabase, ref, push, remove, query, limitToLast, onValue } =
+    const { getDatabase, ref, push, remove, set, query, limitToLast, onValue } =
       await import(`${base}/firebase-database.js`);
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const rollsRef = ref(db, "rolls");
+    const phaseRef = ref(db, "phase");
 
     fbPush = (payload) => push(rollsRef, payload);
     fbRemove = () => remove(rollsRef);
+    fbSetPhase = (n) => set(phaseRef, n);
 
     // Mirror the shared public log (last MAX_ENTRIES) on every change.
     const recent = query(rollsRef, limitToLast(MAX_ENTRIES));
@@ -125,6 +156,12 @@ export async function initLog() {
       synced.length = 0;
       for (const [id, v] of Object.entries(val)) synced.push({ id, lines: [], ...v });
       notify(null);
+    });
+
+    // Mirror the shared phase.
+    onValue(phaseRef, (snap) => {
+      const v = snap.val();
+      if (typeof v === "number") { phase = v; notifyPhase(); }
     });
 
     setMode("firebase");

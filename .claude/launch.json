@@ -4,8 +4,8 @@
     {
       "name": "static",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/paulbelliveau/Documents/C84 Claude Code/server.py"],
-      "port": 4321
+      "runtimeArgs": ["/tmp/c84-preview/server.py"],
+      "port": 4399
     }
   ]
 }

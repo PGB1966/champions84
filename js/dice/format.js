@@ -7,11 +7,9 @@ function diceList(faces) {
 }
 
 export function describeToHit(r) {
-  if (r.auto === "hit") return `to-hit 3d6 = ${r.total} — automatic HIT (natural 3)`;
-  if (r.auto === "miss") return `to-hit 3d6 = ${r.total} — automatic MISS (natural 18)`;
-  const verb = r.hit ? "HIT" : "MISS";
-  const by = r.hit ? `by ${r.margin}` : `by ${-r.margin}`;
-  return `to-hit 3d6 = ${r.total} (need ≤ ${r.needed}, OCV ${r.ocv} vs DCV ${r.dcv}) — ${verb} ${by}`;
+  if (r.auto === "hit") return `to-hit 3d6 [${diceList(r.faces)}] = ${r.total} — natural 3, hits ANY DCV`;
+  if (r.auto === "miss") return `to-hit 3d6 [${diceList(r.faces)}] = ${r.total} — natural 18, automatic MISS`;
+  return `to-hit 3d6 [${diceList(r.faces)}] = ${r.total} (OCV ${r.ocv}) — hits DCV ${r.hitsDcv}`;
 }
 
 export function describeCheck(r) {

@@ -34,23 +34,20 @@ const tests = {
     eq(threw, true, "rejects non-d6");
   },
 
-  "to-hit: hit when total <= 11 + OCV - DCV"() {
-    // OCV 7 vs DCV 7 -> need <= 11. Roll 3+4+4 = 11 -> hit by 0.
-    const r = rollToHit({ ocv: 7, dcv: 7, rng: scriptedRng([3, 4, 4]) });
-    eq([r.total, r.needed, r.hit, r.margin], [11, 11, true, 0], "edge hit");
-  },
-
-  "to-hit: miss when over the number"() {
-    // need <= 11, roll 12 -> miss by 1.
-    const r = rollToHit({ ocv: 7, dcv: 7, rng: scriptedRng([4, 4, 4]) });
-    eq([r.total, r.hit, r.margin], [12, false, -1], "miss");
+  "to-hit: reports hits DCV = 11 + OCV - 3d6"() {
+    // OCV 7, roll 3+4+4 = 11 -> hits DCV 11 + 7 - 11 = 7.
+    const r = rollToHit({ ocv: 7, rng: scriptedRng([3, 4, 4]) });
+    eq([r.total, r.hitsDcv], [11, 7], "hits dcv");
+    // higher roll -> hits a lower DCV
+    const r2 = rollToHit({ ocv: 7, rng: scriptedRng([4, 4, 4]) });
+    eq([r2.total, r2.hitsDcv], [12, 6], "lower dcv on worse roll");
   },
 
   "to-hit: natural 3 always hits, 18 always misses"() {
-    const a = rollToHit({ ocv: -20, dcv: 20, rng: scriptedRng([1, 1, 1]) });
-    eq([a.total, a.hit, a.auto], [3, true, "hit"], "nat 3");
-    const b = rollToHit({ ocv: 20, dcv: -20, rng: scriptedRng([6, 6, 6]) });
-    eq([b.total, b.hit, b.auto], [18, false, "miss"], "nat 18");
+    const a = rollToHit({ ocv: 4, rng: scriptedRng([1, 1, 1]) });
+    eq([a.total, a.auto], [3, "hit"], "nat 3");
+    const b = rollToHit({ ocv: 4, rng: scriptedRng([6, 6, 6]) });
+    eq([b.total, b.auto], [18, "miss"], "nat 18");
   },
 
   "normal damage: STUN = sum, BODY counts 1->0, 2-5->1, 6->2"() {
@@ -115,20 +112,18 @@ const tests = {
   "rollPower: pulling the punch uses fewer dice for damage but not to-hit"() {
     // 3d6 power pulled to 2d6. to-hit still 3d6 = [3,3,3]=9. damage 2d6 = [6,6]=12 STUN, 4 BODY.
     const power = { name: "Jab", type: "HTH", totalDice: "3d6", damageType: "normal", endCost: 4 };
-    const r = rollPower({ power, ocv: 5, targetDcv: 5, dice: 2, rng: scriptedRng([3, 3, 3, 6, 6]) });
+    const r = rollPower({ power, ocv: 5, dice: 2, rng: scriptedRng([3, 3, 3, 6, 6]) });
     eq([r.fullDice, r.dice, r.pulled], [3, 2, true], "pulled state");
     eq(r.toHit.faces.length, 3, "to-hit still 3d6");
     eq([r.damage.stun, r.damage.body], [12, 4], "damage uses 2 dice");
   },
 
-  "rollPower: applies ocvMod and rolls fewer KB dice for knockbackBonus"() {
-    // Punchline glove: 20d6 normal, type HA, knockbackBonus 1 -> KB dice = 2-1 = 1
+  "rollPower: applies ocvMod (hits DCV) and rolls fewer KB dice for knockbackBonus"() {
     const power = { name: "Glove", type: "HA", totalDice: "3d6", damageType: "normal", knockbackBonus: 1, ocvMod: -1, endCost: 4 };
-    // to-hit 3d6 = [4,4,4]=12; ocv 7 + mod -1 = 6, dcv 5 -> need <= 12 -> hit
-    // damage 3d6 = [6,6,6] -> STUN 18, BODY 6
-    // knockback 1d6 = [2] -> 6-2 = 4 -> 8m
-    const r = rollPower({ power, ocv: 7, targetDcv: 5, rng: scriptedRng([4, 4, 4, 6, 6, 6, 2]) });
-    eq(r.toHit.needed, 12, "ocvMod applied");
+    // to-hit 3d6 = [4,4,4]=12; ocv 7 + mod -1 = 6 -> hits DCV 11 + 6 - 12 = 5
+    // damage 3d6 = [6,6,6] -> STUN 18, BODY 6; knockback 1d6 = [2] -> 6-2 = 4 -> 8m
+    const r = rollPower({ power, ocv: 7, rng: scriptedRng([4, 4, 4, 6, 6, 6, 2]) });
+    eq(r.toHit.hitsDcv, 5, "ocvMod applied to hits DCV");
     eq([r.damage.stun, r.damage.body], [18, 6], "damage");
     eq([r.knockback.kbDice, r.knockback.meters], [1, 8], "kb bonus reduces dice");
   }

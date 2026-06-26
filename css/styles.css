@@ -103,6 +103,23 @@ body {
 .notice h2 { margin: 0 0 8px; }
 .notice p { margin: 0; color: var(--ink-dim); }
 
+/* ---- phase tracker ---- */
+.phase-box { margin-bottom: 14px; background: var(--bg-panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.phase-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.phase-seg { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--accent); font-size: 13px; }
+.phase-strip { display: flex; gap: 3px; }
+.phase-pip { flex: 1; height: 8px; border-radius: 2px; background: #0c1020; border: 1px solid var(--line); }
+.phase-pip.on { background: linear-gradient(90deg, #6f4bd8, var(--accent)); border-color: transparent; }
+.phase-slider { width: 100%; margin: 4px 0 10px; accent-color: var(--accent); cursor: pointer; }
+.dash-phase {
+  background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; box-shadow: var(--shadow); margin-bottom: 18px;
+}
+
+/* ---- recovery ---- */
+.recover-row { margin-top: 12px; }
+.recover-btn { width: 100%; background: var(--good); border-color: var(--good); color: #082616; }
+
 /* ---- GM dashboard ---- */
 .dash-intro { color: var(--ink-dim); font-size: 13px; margin: 0 0 18px; }
 .dash-grid {
@@ -188,6 +205,9 @@ body {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
+.stat-boost { display: block; margin-top: 2px; font-size: 10px; font-weight: 700; color: var(--good); }
+.stat.boosted { border-color: var(--good); box-shadow: inset 0 0 0 1px var(--good); }
+.stat.boosted .stat-value { color: var(--good); }
 .stat-actionable { cursor: pointer; transition: border-color 0.12s, transform 0.05s, background 0.12s; }
 .stat-actionable:hover { border-color: var(--accent); background: #252c4e; }
 .stat-actionable:active { transform: translateY(1px); }
@@ -333,6 +353,16 @@ body {
 .vpp-power-meta { font-size: 12px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
 .vpp-slot-actions { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
 .vpp-slot-actions .roll-btn { margin-top: 0; width: auto; padding: 7px 16px; }
+
+/* partial-allocation dice stepper */
+.vpp-dice { display: flex; align-items: center; gap: 8px; }
+.vpp-dice .step { flex: 0 0 auto; min-width: 30px; padding: 4px 0; }
+.vpp-dice-val { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 38px; text-align: center; }
+.vpp-dice-cap { font-size: 11px; color: var(--ink-dim); }
+
+/* self / ally boost checkbox */
+.vpp-self { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--ink-dim); cursor: pointer; }
+.self-check { width: 15px; height: 15px; accent-color: var(--good); cursor: pointer; }
 
 .vpp-cat { margin-top: 4px; }
 .vpp-cat-title {

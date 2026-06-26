@@ -15,6 +15,7 @@ export const irieBlaze = {
     BODY: { max: 10, current: 10 },
     END:  { max: 40, current: 40 }
   },
+  rec: 8,
   xp: { earned: 0, spent: 0 },
   phases: [3, 6, 9, 12],
 

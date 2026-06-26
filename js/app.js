@@ -4,20 +4,47 @@
 import { characters, routes, routeOrder } from "./data/index.js";
 import { renderCharacter, renderDashboard } from "./render.js";
 import { buildRollPanel } from "./rollpanel.js";
-import { DELIVERY_LABEL } from "./vpp.js";
+import { DELIVERY_LABEL, getMode, modeMaxDice, apAt, endAt, slotAP } from "./vpp.js";
 import { rollPower, pulledEndCost, rollCheck, rollEffectDice } from "./dice/hero.js";
 import { describePower, describeCheck, describeVpp } from "./dice/format.js";
-import { addRoll, initLog } from "./log.js";
+import { addRoll, initLog, setPhase } from "./log.js";
 
 const appEl = document.getElementById("app");
 const navEl = document.getElementById("route-nav");
 
+// GM mode is opt-in via ?gm in the URL, so players' links never reveal the GM
+// dashboard or controls. The GM bookmarks  …/champions84/?gm=1#/
+const IS_GM = new URLSearchParams(location.search).has("gm");
+
+// Manual dice-tool rolls are attributed to whoever's screen it is: the current
+// player route, or "GM" on the dashboard.
+function currentRoller() {
+  const slug = currentRoute();
+  if (slug && routes[slug]) return routes[slug].player;
+  return "GM";
+}
+
 // Roll panel is built once and persists across route changes.
-const rollPanel = buildRollPanel();
+const rollPanel = buildRollPanel({ isGM: IS_GM, getRoller: currentRoller });
 document.querySelector(".layout").appendChild(rollPanel.element);
 
 // Connect the shared roll log (no-op / local-only until Firebase is configured).
 initLog();
+
+// Recovery: restore STUN and END by REC (capped at max). Logs the actual gain.
+function onRecover(character) {
+  const rec = character.rec || 0;
+  const lines = [];
+  for (const k of ["STUN", "END"]) {
+    const pool = character.health?.[k];
+    if (!pool) continue;
+    const before = pool.current;
+    pool.current = Math.min(pool.max, before + rec);
+    lines.push(`${k}: +${pool.current - before} (${before} → ${pool.current})`);
+  }
+  addRoll({ who: whoLabel(character), label: `Recovery (REC ${rec})`, lines });
+  route();
+}
 
 function whoLabel(character) {
   return `${character.player ? character.player + " · " : ""}${character.name}`;
@@ -49,7 +76,6 @@ function onRollPower(character, power, chosenDice) {
     const result = rollPower({
       power: { type: "Blast", ...power },
       ocv: character.derived?.OCV ?? 0,
-      targetDcv: rollPanel.getTargetDcv(),
       dice: chosenDice,
       rng: Math.random
     });
@@ -83,25 +109,50 @@ function onRollCheck(character, label, target) {
 
 // --- VPP (Double Helix) ----------------------------------------------------
 const vppEntry = (vpp, id) => vpp.library.find((e) => e.id === id);
-const vppMode = (entry, key) => entry.modes.find((m) => m.deliveryMode === key) || entry.modes[0];
 
 function vppUsedAP(vpp) {
   return (vpp.activeSlots || []).reduce((s, slot) => {
     const e = vppEntry(vpp, slot.id);
-    return s + (e ? vppMode(e, slot.mode).activeCost : 0);
+    return s + (e ? slotAP(e, slot) : 0);
   }, 0);
 }
 
+// Allocate at the strongest delivery, and the most dice, that fit the pool now.
 function onAllocateVpp(character, id) {
   const vpp = character.vpp;
   if (vpp.activeSlots.some((s) => s.id === id)) return;
   const entry = vppEntry(vpp, id);
   if (!entry) return;
   const remaining = vpp.poolSize - vppUsedAP(vpp);
-  // Strongest mode (listed first) that fits the remaining pool.
-  const mode = entry.modes.find((m) => m.activeCost <= remaining);
-  if (!mode) return;
-  vpp.activeSlots.push({ id, mode: mode.deliveryMode });
+  for (const mode of entry.modes) {
+    const max = modeMaxDice(mode);
+    if (!max) {
+      if (mode.activeCost <= remaining) {
+        vpp.activeSlots.push({ id, mode: mode.deliveryMode });
+        return route();
+      }
+      continue;
+    }
+    const fitDice = Math.min(max, Math.floor(remaining / (mode.activeCost / max)));
+    if (fitDice >= 1) {
+      vpp.activeSlots.push({ id, mode: mode.deliveryMode, dice: fitDice, self: mode.deliveryMode === "self_or_touch" });
+      return route();
+    }
+  }
+}
+
+// Change an allocated power's dice (partial allocation), if it still fits.
+function onSetVppDice(character, id, dice) {
+  const vpp = character.vpp;
+  const slot = vpp.activeSlots.find((s) => s.id === id);
+  const entry = vppEntry(vpp, id);
+  if (!slot || !entry) return;
+  const mode = getMode(entry, slot.mode);
+  const max = modeMaxDice(mode);
+  const next = Math.max(1, Math.min(max, dice));
+  const usedOthers = vppUsedAP(vpp) - slotAP(entry, slot);
+  if (apAt(mode, next) > vpp.poolSize - usedOthers) return; // wouldn't fit
+  slot.dice = next;
   route();
 }
 
@@ -112,9 +163,10 @@ function onSetVppMode(character, id, modeKey) {
   if (!slot || !entry) return;
   const next = entry.modes.find((m) => m.deliveryMode === modeKey);
   if (!next) return;
-  const usedOthers = vppUsedAP(vpp) - vppMode(entry, slot.mode).activeCost;
-  if (next.activeCost > vpp.poolSize - usedOthers) return; // wouldn't fit
+  const usedOthers = vppUsedAP(vpp) - slotAP(entry, slot);
+  if (apAt(next, slot.dice) > vpp.poolSize - usedOthers) return; // wouldn't fit
   slot.mode = modeKey;
+  slot.dice = Math.min(slot.dice || modeMaxDice(next), modeMaxDice(next)) || undefined;
   route();
 }
 
@@ -130,29 +182,54 @@ function onControlRollVpp(character) {
   addRoll({ who: whoLabel(character), label: `VPP Control Roll (${target}-)`, lines: [describeCheck(r)] });
 }
 
-// Use an allocated VPP power in its selected delivery mode: roll live (attack /
-// effect dice) or, for adjudicated powers, just log the activation. Pays END.
+function onClearBoosts(character) {
+  character.boosts = {};
+  route();
+}
+
+// Use an allocated VPP power in its selected delivery mode at its allocated
+// dice: roll live (attack / effect) or, for adjudicated powers, log the
+// activation. Self-targeted boosts update the character's Characteristics.
 function onRollVpp(character, entry, modeKey) {
-  const mode = vppMode(entry, modeKey);
+  const mode = getMode(entry, modeKey);
+  const slot = (character.vpp.activeSlots || []).find((s) => s.id === entry.id) || {};
+  const max = modeMaxDice(mode);
+  const dice = max ? Math.max(1, Math.min(max, slot.dice || max)) : 0;
+  const diceExpr = `${dice}d6`;
   let lines;
+
   if (entry.rollType === "adjudicated") {
     lines = ["Activated — effect adjudicated by GM (no die roll)"];
   } else if (entry.rollType === "attackRoll") {
-    const power = { name: entry.name, type: "Blast", totalDice: mode.dice, damageType: entry.damageType || "normal" };
+    const power = { name: entry.name, type: "Blast", totalDice: diceExpr, damageType: entry.damageType || "normal" };
     lines = describePower(rollPower({
-      power, ocv: character.derived?.OCV ?? 0, targetDcv: rollPanel.getTargetDcv(), rng: Math.random
+      power, ocv: character.derived?.OCV ?? 0, rng: Math.random
     }));
   } else {
-    lines = [describeVpp({ ...entry, dice: mode.dice }, rollEffectDice({ dice: mode.dice, rng: Math.random }))];
+    const r = rollEffectDice({ dice: diceExpr, rng: Math.random });
+    lines = [describeVpp({ ...entry, dice: diceExpr }, r)];
+    // Self-targeted Aid to a characteristic updates the sheet.
+    if (entry.rollType === "addToCharacteristic" && slot.self !== false) {
+      const t = entry.target;
+      if (t === "SPD") {
+        lines.push("SPD Aid: apply per the SPD conversion table (not auto-applied).");
+      } else if (t && character.characteristics && character.characteristics[t] != null) {
+        character.boosts = character.boosts || {};
+        character.boosts[t] = (character.boosts[t] || 0) + r.total;
+        const base = character.characteristics[t];
+        lines.push(`Applied to self: ${t} ${base} → ${base + character.boosts[t]} (boost +${character.boosts[t]})`);
+      }
+    }
   }
   if (entry.note) lines.push(entry.note);
   if (mode.note) lines.push(mode.note);
 
-  const endCost = mode.endCost || 0;
+  const endCost = endAt(mode, dice);
   deductEnd(character, endCost, lines);
 
   const delivery = DELIVERY_LABEL[modeKey] || modeKey;
-  addRoll({ who: whoLabel(character), label: `${entry.name} — ${delivery} (${endCost} END)`, lines });
+  const diceLabel = max ? ` ${diceExpr}` : "";
+  addRoll({ who: whoLabel(character), label: `${entry.name} — ${delivery}${diceLabel} (${endCost} END)`, lines });
   route();
 }
 
@@ -160,6 +237,7 @@ const vppHandlers = {
   onAllocate: onAllocateVpp,
   onRemove: onRemoveVpp,
   onSetMode: onSetVppMode,
+  onSetDice: onSetVppDice,
   onRollVpp,
   onControlRoll: onControlRollVpp
 };
@@ -181,8 +259,8 @@ function buildNav() {
   navEl.replaceChildren();
   const active = currentRoute();
 
-  const gm = link("", "GM", active === "");
-  navEl.appendChild(gm);
+  // GM tab only in GM mode, so players' screens never show it.
+  if (IS_GM) navEl.appendChild(link("", "GM", active === ""));
 
   for (const slug of routeOrder) {
     const def = routes[slug];
@@ -191,7 +269,7 @@ function buildNav() {
 
   function link(slug, label, isActive) {
     const a = document.createElement("a");
-    a.href = `#/${slug}`;
+    a.href = IS_GM ? `?gm=1#/${slug}` : `#/${slug}`; // keep GM mode across nav
     a.textContent = label;
     a.className = "route-link" + (isActive ? " active" : "");
     return a;
@@ -219,8 +297,14 @@ function renderRoute(slug) {
   appEl.replaceChildren();
 
   if (slug === "") {
+    if (!IS_GM) {
+      // Players don't get the all-PC GM dashboard; offer a simple chooser.
+      const note = renderNotice("Champions '84", "Open your character from the tabs above.");
+      appEl.appendChild(note);
+      return;
+    }
     const items = Object.values(characters).map((c) => ({ character: c, slug: slugForCharacter(c.id) }));
-    appEl.appendChild(renderDashboard(items, { onHealthChange }));
+    appEl.appendChild(renderDashboard(items, { onHealthChange, onSetPhase: setPhase }));
     return;
   }
 
@@ -241,7 +325,7 @@ function renderRoute(slug) {
 
   // Single character: render directly. Multiple: render as tabs.
   if (ids.length === 1) {
-    appEl.appendChild(renderCharacter(characters[ids[0]], { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, vppHandlers }));
+    appEl.appendChild(renderCharacter(characters[ids[0]], { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers }));
     return;
   }
   appEl.appendChild(renderTabs(ids));
@@ -259,7 +343,7 @@ function renderTabs(ids) {
   let activeId = ids[0];
 
   function paint() {
-    body.replaceChildren(renderCharacter(characters[activeId], { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, vppHandlers }));
+    body.replaceChildren(renderCharacter(characters[activeId], { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers }));
     [...tabBar.children].forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.id === activeId);
     });

@@ -13,6 +13,7 @@ export const vivian = {
     BODY: { max: 10, current: 10 },
     END:  { max: 40, current: 40 }
   },
+  rec: 10,
   // Leaping 12m bought (PDF); Running/Swimming at 6E standard (not specified).
   movement: { Running: 12, Leaping: 12, Swimming: 4 },
   xp: { earned: 0, spent: 0 },

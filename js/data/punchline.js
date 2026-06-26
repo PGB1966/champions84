@@ -18,6 +18,7 @@ export const punchline = {
     BODY: { max: 13, current: 13 },
     END:  { max: 40, current: 40 }
   },
+  rec: 10,
   // 6E standard movement (meters/Phase); no points spent on movement.
   movement: { Running: 12, Leaping: 4, Swimming: 4 },
   // Experience: earned and spent tracked separately; unspent is derived.

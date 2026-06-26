@@ -124,10 +124,14 @@ the rest of the DB stays locked. Paste under **Realtime Database → Rules**:
       ".read": true,
       ".write": true,
       "$rollId": { ".validate": "newData.hasChildren(['ts','who'])" }
-    }
+    },
+    "phase": { ".read": true, ".write": true }
   }
 }
 ```
+
+The `phase` node backs the GM phase tracker (shared 1–12 segment). Without it,
+phase changes are rejected (`permission_denied`) and won't sync to players.
 
 If you later want it tighter, enable Anonymous Auth and gate `.write` on
 `auth != null`, or add Firebase App Check — neither requires UI changes here.
@@ -137,6 +141,29 @@ If you later want it tighter, enable Anonymous Auth and gate `.write` on
 Open the same URL in two browser windows; a roll (or **Clear**) in one appears
 in the other within a moment, and both show the green **● Live** badge. The
 log keeps the last 200 rolls.
+
+## GM mode
+
+The GM dashboard and controls only appear in **GM mode**, opted into with a
+`?gm=1` query param — so players' links never reveal them.
+
+- **GM:** `https://…/champions84/?gm=1#/` (GM tab, all-PC dashboard, phase
+  slider, the "GM private rolls" switch). The `?gm=1` persists as you navigate.
+- **Players:** `https://…/champions84/#/mike` (etc.) — no GM tab; the root shows
+  a neutral chooser, not the dashboard.
+
+## Table tools
+
+- **To-hit** reports the DCV it hits (`hits DCV N` = 11 + OCV − 3d6); no target
+  entry — compare to the actual target's DCV at the table.
+- **Recovery** button (Status section) restores STUN + END by the character's
+  `rec`, capped at max.
+- **Phase tracker** — shared 1–12 segment; GM drives the slider on the
+  dashboard, players see it read-only in their roll panel (needs the `phase` DB
+  rule above).
+- **Dice Tools** panel: To-hit (OCV), a generic Nd6 roller (default 3d6),
+  Normal/Killing damage, Knockback, and a **HAP** button (2d6 Heroic Action
+  Points).
 
 ### Table-confirmable conventions (edit `CONVENTIONS` in `js/dice/hero.js`)
 
@@ -202,8 +229,21 @@ END; the UI toggle picks one and reserves that mode's AP. The "dice
 discrepancies" from the PDFs are just these delivery variants (e.g. Suppress:
 Touch 8d6 / Ranged 4d6 / Area 2d6).
 
-GM-adjudicated powers (`rollType: "adjudicated"`) — Cellular Necrosis (RKA),
-Entangle, Gene-Lock, Fear, Bio-Plating (Armor), Invisibility, Predator Mode —
-allocate and cost AP/END but have no die roll; "Activate" just logs the use and
-the GM rules the effect. AP/END marked "(est.)" in the data are placeholders
-from the PDFs — adjust freely.
+GM-adjudicated powers (`rollType: "adjudicated"`) — Entangle, Fear, Bio-Plating
+(Armor), Invisibility, Predator Mode — allocate and cost AP/END but have no die
+roll; "Activate" just logs the use and the GM rules the effect. (Cellular
+Necrosis/RKA and Gene-Lock/Transform now roll dice.) AP/END marked "(est.)" in
+the data are placeholders from the PDFs — adjust freely.
+
+**Partial allocation:** a power can be allocated at fewer dice than its mode's
+max (a dice stepper on each active slot), reserving proportionally less AP — so
+several partial powers can share the 40-AP pool. `activeSlots` entries are
+`{ id, mode, dice, self }`; AP/END scale with `dice` (see `apAt`/`endAt` in
+`js/vpp.js`).
+
+**Self-boosts:** a Boost (Aid) targeting a characteristic shows an "Apply to
+me" checkbox (on by default for Self/Touch). When used self-targeted, the rolled
+amount adds to `character.boosts[CHAR]` and the Characteristics section shows the
+boosted value (and recomputed roll); a "Clear boosts" button resets them (Aid
+fades). SPD Aid isn't auto-applied (special conversion); OCV/DCV/defenses aren't
+auto-recalculated from boosted characteristics.

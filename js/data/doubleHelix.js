@@ -26,6 +26,7 @@ export const doubleHelix = {
     BODY: { max: 10, current: 10 },
     END:  { max: 30, current: 30 }
   },
+  rec: 6,
   movement: { Running: 6, Leaping: 2, Swimming: 2 },
   xp: { earned: 0, spent: 0 },
   phases: [3, 6, 9, 12],

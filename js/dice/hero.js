@@ -20,21 +20,20 @@ export const CONVENTIONS = {
 };
 
 // --- to-hit ----------------------------------------------------------------
-// 3d6, hit if total <= 11 + OCV - DCV. A natural 3 always hits, 18 always
-// misses, regardless of CVs.
-export function rollToHit({ ocv = 0, dcv = 0, rng } = {}) {
+// 3d6. Reports the highest DCV this roll hits: hitsDcv = 11 + OCV - 3d6. The
+// table compares that to the target's actual DCV (no target entry needed). A
+// natural 3 always hits any DCV; a natural 18 always misses.
+export function rollToHit({ ocv = 0, rng } = {}) {
   const faces = rollDice(3, rng);
   const total = sum(faces);
-  const needed = 11 + ocv - dcv; // hit when total <= needed
-  let hit = total <= needed;
   let auto = null;
-  if (total === 3) { hit = true; auto = "hit"; }
-  else if (total === 18) { hit = false; auto = "miss"; }
+  if (total === 3) auto = "hit";
+  else if (total === 18) auto = "miss";
   return {
     kind: "toHit",
-    faces, total, ocv, dcv, needed,
-    hit, auto,
-    margin: needed - total // >=0 = made it by this much (in CV); <0 = missed by
+    faces, total, ocv,
+    hitsDcv: 11 + ocv - total, // highest DCV this roll connects with
+    auto
   };
 }
 
@@ -126,7 +125,7 @@ export function pulledEndCost(power, chosenDice) {
 // dice/pulled state; the UI decides how to label/log them.
 const PHYSICAL_TYPES = new Set(["HA", "HTH", "HKA"]);
 
-export function rollPower({ power, ocv = 0, targetDcv = 0, dice, rng } = {}) {
+export function rollPower({ power, ocv = 0, dice, rng } = {}) {
   const ocvMod = power.ocvMod || 0;
   const fullDice = parseDiceCount(power.totalDice);
   const useDice = dice == null
@@ -134,7 +133,7 @@ export function rollPower({ power, ocv = 0, targetDcv = 0, dice, rng } = {}) {
     : Math.max(1, Math.min(fullDice, Math.trunc(dice)));
   const pulled = useDice < fullDice;
 
-  const toHit = rollToHit({ ocv: ocv + ocvMod, dcv: targetDcv, rng });
+  const toHit = rollToHit({ ocv: ocv + ocvMod, rng });
 
   let damage = null;
   let knockback = null;
@@ -151,5 +150,5 @@ export function rollPower({ power, ocv = 0, targetDcv = 0, dice, rng } = {}) {
     knockback = rollKnockback({ body: damage.body, kbDice, rng });
   }
 
-  return { kind: "power", power, ocv, ocvMod, targetDcv, fullDice, dice: useDice, pulled, toHit, damage, knockback };
+  return { kind: "power", power, ocv, ocvMod, fullDice, dice: useDice, pulled, toHit, damage, knockback };
 }
