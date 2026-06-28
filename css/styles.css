@@ -138,6 +138,13 @@ body {
 .dash-name { font-size: 18px; font-weight: 800; color: var(--ink); text-decoration: none; }
 .dash-name:hover { color: var(--accent); text-decoration: underline; }
 .dash-quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.char-editor { margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
+.char-editor-head { font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
+.char-editor-group { display: flex; flex-direction: column; gap: 5px; }
+.char-editor-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-dim); }
+.char-edit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 6px; }
+.char-edit-cell { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--ink-dim); letter-spacing: 0.3px; }
+.char-edit { width: 100%; padding: 5px 4px; text-align: center; }
 .dash-card .trackers { gap: 10px; }
 .dash-card .tracker { padding: 9px 11px; }
 

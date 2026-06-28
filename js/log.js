@@ -28,6 +28,30 @@ let phase = 1;
 let fbSetPhase = null;             // (n) => void — write phase to RTDB
 const phaseListeners = new Set();  // (n) => void
 
+// Shared character overrides (GM-edited stats). GM writes; all read.
+// override: { characteristics?, derived?, rec?, movement? }
+let fbSetChar = null;              // (id, override) => void
+const charListeners = new Set();   // (allCharData) => void
+
+function notifyChars(data) {
+  for (const fn of charListeners) fn(data);
+}
+
+// Write a character's override (GM, from the dashboard).
+export function setCharacterOverride(id, override) {
+  if (mode === "firebase" && fbSetChar) {
+    fbSetChar(id, override); // onValue mirrors it back to every client
+    return;
+  }
+  notifyChars({ [id]: override });
+}
+
+// fn receives the whole `characters` override map on every change.
+export function subscribeCharacters(fn) {
+  charListeners.add(fn);
+  return () => charListeners.delete(fn);
+}
+
 function notifyPhase() {
   for (const fn of phaseListeners) fn(phase);
 }
@@ -144,10 +168,12 @@ export async function initLog() {
     const db = getDatabase(app);
     const rollsRef = ref(db, "rolls");
     const phaseRef = ref(db, "phase");
+    const charsRef = ref(db, "characters");
 
     fbPush = (payload) => push(rollsRef, payload);
     fbRemove = () => remove(rollsRef);
     fbSetPhase = (n) => set(phaseRef, n);
+    fbSetChar = (id, override) => set(ref(db, `characters/${id}`), override);
 
     // Mirror the shared public log (last MAX_ENTRIES) on every change.
     const recent = query(rollsRef, limitToLast(MAX_ENTRIES));
@@ -163,6 +189,9 @@ export async function initLog() {
       const v = snap.val();
       if (typeof v === "number") { phase = v; notifyPhase(); }
     });
+
+    // Mirror GM character overrides.
+    onValue(charsRef, (snap) => notifyChars(snap.val() || {}));
 
     setMode("firebase");
     return "firebase";

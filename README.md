@@ -125,13 +125,16 @@ the rest of the DB stays locked. Paste under **Realtime Database → Rules**:
       ".write": true,
       "$rollId": { ".validate": "newData.hasChildren(['ts','who'])" }
     },
-    "phase": { ".read": true, ".write": true }
+    "phase": { ".read": true, ".write": true },
+    "characters": { ".read": true, ".write": true }
   }
 }
 ```
 
-The `phase` node backs the GM phase tracker (shared 1–12 segment). Without it,
-phase changes are rejected (`permission_denied`) and won't sync to players.
+The `phase` node backs the GM phase tracker (shared 1–12 segment); the
+`characters` node holds GM-edited stat overrides (characteristics, combat
+values, REC, movement) synced to players' sheets. Without each rule, those
+writes are rejected (`permission_denied`) and won't sync.
 
 If you later want it tighter, enable Anonymous Auth and gate `.write` on
 `auth != null`, or add Firebase App Check — neither requires UI changes here.
@@ -161,6 +164,15 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
 - **Phase tracker** — shared 1–12 segment; GM drives the slider on the
   dashboard, players see it read-only in their roll panel (needs the `phase` DB
   rule above).
+- **GM-editable stats** — each dashboard card has number inputs for the eight
+  characteristics, the combat/defense values (OCV/DCV/OMCV/DMCV/PD/ED/rPD/rED,
+  MD), **STUN/BODY/END totals (max)**, REC, and movement (incl. Vivian's
+  Clinging). 6E treats these as independent (not figured), so they're all
+  editable — update them when a player spends XP, no code change needed. An edit
+  writes the whole override to `characters/<id>` and syncs live to that player's
+  sheet (needs the `characters` DB rule). The *current* STUN/BODY/END values
+  (the in-combat +/- trackers) stay local — each person tracks their own; the
+  GM edits only the totals.
 - **Dice Tools** panel: To-hit (OCV), a generic Nd6 roller (default 3d6),
   Normal/Killing damage, Knockback, and a **HAP** button (2d6 Heroic Action
   Points).

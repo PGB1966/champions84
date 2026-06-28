@@ -7,7 +7,7 @@ import { buildRollPanel } from "./rollpanel.js";
 import { DELIVERY_LABEL, getMode, modeMaxDice, apAt, endAt, slotAP } from "./vpp.js";
 import { rollPower, pulledEndCost, rollCheck, rollEffectDice } from "./dice/hero.js";
 import { describePower, describeCheck, describeVpp } from "./dice/format.js";
-import { addRoll, initLog, setPhase } from "./log.js";
+import { addRoll, initLog, setPhase, setCharacterOverride, subscribeCharacters } from "./log.js";
 
 const appEl = document.getElementById("app");
 const navEl = document.getElementById("route-nav");
@@ -30,6 +30,33 @@ document.querySelector(".layout").appendChild(rollPanel.element);
 
 // Connect the shared roll log (no-op / local-only until Firebase is configured).
 initLog();
+
+// Apply GM-edited characteristic overrides (synced) onto the in-memory
+// characters, then re-render so players see the GM's changes live.
+function applyCharOverrides(data) {
+  for (const [id, ov] of Object.entries(data || {})) {
+    const c = characters[id];
+    if (!c || !ov) continue;
+    if (ov.characteristics && c.characteristics) Object.assign(c.characteristics, ov.characteristics);
+    if (ov.derived && c.derived) Object.assign(c.derived, ov.derived);
+    if (typeof ov.rec === "number") c.rec = ov.rec;
+    if (ov.movement) c.movement = { ...(c.movement || {}), ...ov.movement };
+    if (ov.maxima && c.health) {
+      for (const k of Object.keys(ov.maxima)) {
+        if (!c.health[k]) continue;
+        c.health[k].max = ov.maxima[k];
+        if (c.health[k].current > c.health[k].max) c.health[k].current = c.health[k].max; // clamp on decrease
+      }
+    }
+  }
+  route();
+}
+subscribeCharacters(applyCharOverrides);
+
+// GM writes a character's full stat override from the dashboard.
+function onSetChar(id, override) {
+  setCharacterOverride(id, override);
+}
 
 // Recovery: restore STUN and END by REC (capped at max). Logs the actual gain.
 function onRecover(character) {
@@ -304,7 +331,7 @@ function renderRoute(slug) {
       return;
     }
     const items = Object.values(characters).map((c) => ({ character: c, slug: slugForCharacter(c.id) }));
-    appEl.appendChild(renderDashboard(items, { onHealthChange, onSetPhase: setPhase }));
+    appEl.appendChild(renderDashboard(items, { onHealthChange, onSetPhase: setPhase, onSetChar }));
     return;
   }
 

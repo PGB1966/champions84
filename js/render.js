@@ -244,7 +244,73 @@ function section(title, body) {
 // Compact card per PC: name (links to the full sheet), quick combat stats, and
 // the STUN/BODY/END trackers (editable, so the GM can track damage live).
 // `items` = [{ character, slug }].
-export function renderDashboard(items, { onHealthChange, onSetPhase } = {}) {
+// Full GM editor for a dashboard card: characteristics, combat/defense values,
+// REC, and movement — all independently editable (6E doesn't figure them) and
+// synced to the player's sheet. Any change writes the whole override object.
+function gmEditor(character, onSetChar) {
+  const inputs = { characteristics: {}, derived: {}, movement: {}, maxima: {}, rec: null };
+  const num = (i) => parseInt(i.value, 10) || 0;
+
+  const commit = () => {
+    const ov = {};
+    const fill = (bucket) => {
+      const keys = Object.keys(inputs[bucket]);
+      if (!keys.length) return undefined;
+      const o = {};
+      for (const k of keys) o[k] = num(inputs[bucket][k]);
+      return o;
+    };
+    const ch = fill("characteristics"); if (ch) ov.characteristics = ch;
+    const dv = fill("derived"); if (dv) ov.derived = dv;
+    const mx = fill("maxima"); if (mx) ov.maxima = mx;
+    const mv = fill("movement"); if (mv) ov.movement = mv;
+    if (inputs.rec) ov.rec = num(inputs.rec);
+    onSetChar(character.id, ov);
+  };
+
+  const cell = (label, value, bucket, key) => {
+    const input = el("input", { type: "number", class: "num char-edit", value: String(value) });
+    input.addEventListener("change", commit);
+    if (bucket === "rec") inputs.rec = input; else inputs[bucket][key] = input;
+    return el("label", { class: "char-edit-cell" }, [el("span", {}, label), input]);
+  };
+
+  const sections = [];
+  function group(title, cells) {
+    if (cells.length) sections.push(el("div", { class: "char-editor-group" }, [
+      el("div", { class: "char-editor-title" }, title),
+      el("div", { class: "char-edit-grid" }, cells)
+    ]));
+  }
+
+  if (character.characteristics) {
+    group("Characteristics", CHAR_ORDER.filter((k) => character.characteristics[k] != null)
+      .map((k) => cell(k, character.characteristics[k], "characteristics", k)));
+  }
+  if (character.derived) {
+    group("Combat & Defenses", DERIVED_ORDER.filter((k) => character.derived[k] != null)
+      .map((k) => cell(k, character.derived[k], "derived", k)));
+  }
+  if (character.health) {
+    group("Totals (max)", ["STUN", "BODY", "END"].filter((k) => character.health[k])
+      .map((k) => cell(`${k} max`, character.health[k].max, "maxima", k)));
+  }
+
+  // REC + movement (including any character-specific modes, e.g. Vivian's Clinging).
+  const movement = { ...STANDARD_MOVEMENT, ...(character.movement || {}) };
+  const moveOrder = [...MOVEMENT_ORDER, ...Object.keys(movement).filter((k) => !MOVEMENT_ORDER.includes(k))];
+  const recMove = [];
+  if (character.rec != null) recMove.push(cell("REC", character.rec, "rec"));
+  for (const k of moveOrder) recMove.push(cell(`${k} (m)`, movement[k], "movement", k));
+  group("REC & Movement", recMove);
+
+  return el("div", { class: "char-editor" }, [
+    el("div", { class: "char-editor-head" }, "GM edit — synced to player"),
+    ...sections
+  ]);
+}
+
+export function renderDashboard(items, { onHealthChange, onSetPhase, onSetChar } = {}) {
   const root = el("div", { class: "dashboard" });
   root.appendChild(el("p", { class: "dash-intro" },
     "All four PCs at a glance — adjust trackers as combat unfolds. Use the Dice Tools panel for NPC rolls (flip on “GM private” to keep them off the shared log)."));
@@ -270,20 +336,17 @@ export function renderDashboard(items, { onHealthChange, onSetPhase } = {}) {
   }
 
   const grid = el("div", { class: "dash-grid" }, items.map(({ character, slug }) => {
-    const d = character.derived || {};
-    const quick = ["OCV", "DCV", "PD", "ED", "rPD", "rED"]
-      .filter((k) => d[k] != null)
-      .map((k) => el("span", { class: "chip" }, `${k} ${d[k]}`));
     const trackers = ["STUN", "BODY", "END"]
       .filter((k) => character.health && character.health[k])
       .map((k) => healthTracker(character, k, character.health[k], onHealthChange));
 
     return el("div", { class: "dash-card" }, [
       el("div", { class: "dash-card-head" }, [
-        el("a", { class: "dash-name", href: `#/${slug}` }, character.name),
+        // Dashboard is GM-only, so keep GM mode when jumping to a sheet.
+        el("a", { class: "dash-name", href: `?gm=1#/${slug}` }, character.name),
         character.player ? el("span", { class: "chip" }, character.player) : null
       ]),
-      quick.length ? el("div", { class: "dash-quick" }, quick) : null,
+      typeof onSetChar === "function" ? gmEditor(character, onSetChar) : null,
       el("div", { class: "trackers" }, trackers)
     ]);
   }));

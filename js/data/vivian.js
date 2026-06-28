@@ -15,7 +15,9 @@ export const vivian = {
   },
   rec: 10,
   // Leaping 12m bought (PDF); Running/Swimming at 6E standard (not specified).
-  movement: { Running: 12, Leaping: 12, Swimming: 4 },
+  // Clinging (wall/ceiling crawl) rate not given on the sheet — set to running
+  // speed as a sensible default; adjust from the GM dashboard.
+  movement: { Running: 12, Leaping: 12, Swimming: 4, Clinging: 12 },
   xp: { earned: 0, spent: 0 },
   phases: [3, 6, 9, 12],
 
