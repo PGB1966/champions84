@@ -161,6 +161,11 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
   entry — compare to the actual target's DCV at the table.
 - **Recovery** button (Status section) restores STUN + END by the character's
   `rec`, capped at max.
+- **Downed lock** — at 0 STUN or 0 BODY a character shows a "DOWN" banner and
+  its action controls (rolls, powers, VPP, Recover, characteristic checks) lock
+  on player screens. The GM (`?gm=1`) keeps full control to roll/heal/Recover
+  for them. Health trackers stay usable for tracking, and the lock is
+  per-character (one of Mike's two going down doesn't affect the other).
 - **Phase tracker** — shared 1–12 segment; GM drives the slider on the
   dashboard, players see it read-only in their roll panel (needs the `phase` DB
   rule above).

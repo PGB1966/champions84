@@ -299,6 +299,22 @@ function currentRoute() {
   return slug; // "" => GM dashboard
 }
 
+// A character is "down" at 0 STUN (KO) or 0 BODY (dying) — can't act.
+function isDowned(c) {
+  const h = c.health || {};
+  return (h.STUN && h.STUN.current <= 0) || (h.BODY && h.BODY.current <= 0);
+}
+
+// Shared render options; a downed character's controls lock on player screens
+// (locked), but the GM can always act (IS_GM).
+function sheetOptions(character) {
+  const downed = isDowned(character);
+  return {
+    onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers,
+    downed, locked: downed && !IS_GM
+  };
+}
+
 // Which player route shows a given character (for dashboard sheet links).
 function slugForCharacter(id) {
   for (const slug of routeOrder) {
@@ -377,7 +393,7 @@ function renderRoute(slug) {
 
   // Single character: render directly. Multiple: render as tabs.
   if (ids.length === 1) {
-    appEl.appendChild(renderCharacter(characters[ids[0]], { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers }));
+    appEl.appendChild(renderCharacter(characters[ids[0]], sheetOptions(characters[ids[0]])));
     return;
   }
   appEl.appendChild(renderTabs(ids));
@@ -395,7 +411,7 @@ function renderTabs(ids) {
   let activeId = ids[0];
 
   function paint() {
-    body.replaceChildren(renderCharacter(characters[activeId], { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers }));
+    body.replaceChildren(renderCharacter(characters[activeId], sheetOptions(characters[activeId])));
     [...tabBar.children].forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.id === activeId);
     });

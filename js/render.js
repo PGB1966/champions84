@@ -340,10 +340,13 @@ export function renderDashboard(items, { onHealthChange, onSetPhase, onSetChar }
       .filter((k) => character.health && character.health[k])
       .map((k) => healthTracker(character, k, character.health[k], onHealthChange));
 
-    return el("div", { class: "dash-card" }, [
+    const h = character.health || {};
+    const cardDowned = (h.STUN && h.STUN.current <= 0) || (h.BODY && h.BODY.current <= 0);
+    return el("div", { class: "dash-card" + (cardDowned ? " dash-card-down" : "") }, [
       el("div", { class: "dash-card-head" }, [
         // Dashboard is GM-only, so keep GM mode when jumping to a sheet.
         el("a", { class: "dash-name", href: `?gm=1#/${slug}` }, character.name),
+        cardDowned ? el("span", { class: "down-badge" }, "DOWN") : null,
         character.player ? el("span", { class: "chip" }, character.player) : null
       ]),
       typeof onSetChar === "function" ? gmEditor(character, onSetChar) : null,
@@ -385,7 +388,7 @@ function plainList(items) {
   return el("ul", { class: "plain-list" }, items.map((s) => el("li", {}, s)));
 }
 
-export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers } = {}) {
+export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers, downed, locked } = {}) {
   const root = el("article", { class: "sheet", dataset: { characterId: character.id } });
 
   // Identity header
@@ -514,6 +517,25 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
   }
   if (character.complications && character.complications.length) {
     root.appendChild(section("Complications", plainList(character.complications)));
+  }
+
+  // Downed banner + control lock. `downed` = 0 STUN/BODY (shown to everyone);
+  // `locked` = downed on a player screen (GM keeps control). Health trackers
+  // stay usable for tracking; only action/roll controls lock.
+  if (downed) {
+    const at0 = [];
+    if (character.health?.STUN && character.health.STUN.current <= 0) at0.push("STUN");
+    if (character.health?.BODY && character.health.BODY.current <= 0) at0.push("BODY");
+    root.prepend(el("div", { class: "downed-banner" },
+      `⚠ DOWN — 0 ${at0.join(" & ")}${locked ? " · actions locked (GM can still act)" : ""}`));
+  }
+  if (locked) {
+    root.classList.add("sheet-locked");
+    const SEL = ".roll-btn, .chip-btn, .ghost-btn, .stat-actionable, .roll-note-actionable, .seg, .self-check, .vpp-dice .step";
+    root.querySelectorAll(SEL).forEach((elm) => {
+      if (elm.tagName === "BUTTON" || elm.tagName === "INPUT") elm.disabled = true;
+      elm.classList.add("locked-ctrl");
+    });
   }
 
   return root;
