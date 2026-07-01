@@ -28,22 +28,35 @@ let phase = 1;
 let fbSetPhase = null;             // (n) => void — write phase to RTDB
 const phaseListeners = new Set();  // (n) => void
 
-// Shared character overrides (GM-edited stats). GM writes; all read.
-// override: { characteristics?, derived?, rec?, movement? }
-let fbSetChar = null;              // (id, override) => void
+// Shared character state (GM-edited stat overrides + live current STUN/BODY/END).
+// override: { characteristics?, derived?, maxima?, rec?, movement? }
+// current:  { STUN?, BODY?, END? }
+// Stats and current live under separate sub-keys of characters/<id> and are
+// written independently (update / sub-path set) so neither clobbers the other.
+let fbSetChar = null;              // (id, override) => void  — merge stat keys
+let fbSetCurrent = null;           // (id, current)  => void  — set current node
 const charListeners = new Set();   // (allCharData) => void
 
 function notifyChars(data) {
   for (const fn of charListeners) fn(data);
 }
 
-// Write a character's override (GM, from the dashboard).
+// Write a character's stat override (GM, from the dashboard).
 export function setCharacterOverride(id, override) {
   if (mode === "firebase" && fbSetChar) {
     fbSetChar(id, override); // onValue mirrors it back to every client
     return;
   }
   notifyChars({ [id]: override });
+}
+
+// Write a character's current STUN/BODY/END (dual control — GM or player).
+export function setCharacterCurrent(id, current) {
+  if (mode === "firebase" && fbSetCurrent) {
+    fbSetCurrent(id, current);
+    return;
+  }
+  notifyChars({ [id]: { current } });
 }
 
 // fn receives the whole `characters` override map on every change.
@@ -161,7 +174,7 @@ export async function initLog() {
   try {
     const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
     const { initializeApp } = await import(`${base}/firebase-app.js`);
-    const { getDatabase, ref, push, remove, set, query, limitToLast, onValue } =
+    const { getDatabase, ref, push, remove, set, update, query, limitToLast, onValue } =
       await import(`${base}/firebase-database.js`);
 
     const app = initializeApp(firebaseConfig);
@@ -173,7 +186,8 @@ export async function initLog() {
     fbPush = (payload) => push(rollsRef, payload);
     fbRemove = () => remove(rollsRef);
     fbSetPhase = (n) => set(phaseRef, n);
-    fbSetChar = (id, override) => set(ref(db, `characters/${id}`), override);
+    fbSetChar = (id, override) => update(ref(db, `characters/${id}`), override);
+    fbSetCurrent = (id, current) => set(ref(db, `characters/${id}/current`), current);
 
     // Mirror the shared public log (last MAX_ENTRIES) on every change.
     const recent = query(rollsRef, limitToLast(MAX_ENTRIES));

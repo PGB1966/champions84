@@ -7,7 +7,7 @@ import { buildRollPanel } from "./rollpanel.js";
 import { DELIVERY_LABEL, getMode, modeMaxDice, apAt, endAt, slotAP } from "./vpp.js";
 import { rollPower, pulledEndCost, rollCheck, rollEffectDice } from "./dice/hero.js";
 import { describePower, describeCheck, describeVpp } from "./dice/format.js";
-import { addRoll, initLog, setPhase, setCharacterOverride, subscribeCharacters } from "./log.js";
+import { addRoll, initLog, setPhase, setCharacterOverride, setCharacterCurrent, subscribeCharacters } from "./log.js";
 
 const appEl = document.getElementById("app");
 const navEl = document.getElementById("route-nav");
@@ -48,10 +48,26 @@ function applyCharOverrides(data) {
         if (c.health[k].current > c.health[k].max) c.health[k].current = c.health[k].max; // clamp on decrease
       }
     }
+    if (ov.current && c.health) {
+      for (const k of Object.keys(ov.current)) {
+        if (c.health[k] && typeof ov.current[k] === "number") {
+          c.health[k].current = Math.max(0, Math.min(c.health[k].max, ov.current[k]));
+        }
+      }
+    }
   }
   route();
 }
 subscribeCharacters(applyCharOverrides);
+
+// Push a character's current STUN/BODY/END to the shared state (dual control).
+function syncHealth(character) {
+  const h = character.health;
+  if (!h) return;
+  const current = {};
+  for (const k of ["STUN", "BODY", "END"]) if (h[k]) current[k] = h[k].current;
+  setCharacterCurrent(character.id, current);
+}
 
 // GM writes a character's full stat override from the dashboard.
 function onSetChar(id, override) {
@@ -70,6 +86,7 @@ function onRecover(character) {
     lines.push(`${k}: +${pool.current - before} (${before} → ${pool.current})`);
   }
   addRoll({ who: whoLabel(character), label: `Recovery (REC ${rec})`, lines });
+  syncHealth(character);
   route();
 }
 
@@ -143,6 +160,7 @@ function onRollPower(character, power, chosenDice) {
 
   deductEnd(character, endCost, lines);
   addRoll({ who: whoLabel(character), label, lines });
+  syncHealth(character); // END/STUN spend is shared
   route(); // reflect END spend / keep tab state consistent
 }
 
@@ -282,6 +300,7 @@ function onRollVpp(character, entry, modeKey) {
   const delivery = DELIVERY_LABEL[modeKey] || modeKey;
   const diceLabel = max ? ` ${diceExpr}` : "";
   addRoll({ who: whoLabel(character), label: `${entry.name} — ${delivery}${diceLabel} (${endCost} END)`, lines });
+  syncHealth(character); // END/STUN spend is shared
   route();
 }
 
@@ -355,9 +374,10 @@ function renderNotice(title, msg) {
   return wrap;
 }
 
-// Health edits mutate the in-memory pool (render.js already clamped it); this
-// session just re-renders. Firebase persistence is wired in a later step.
-function onHealthChange() {
+// Health edits mutate the in-memory pool (render.js clamps it). Sync current
+// STUN/BODY/END for health kinds (dual control); XP changes just re-render.
+function onHealthChange(character, kind) {
+  if (character && (kind === "STUN" || kind === "BODY" || kind === "END")) syncHealth(character);
   route();
 }
 

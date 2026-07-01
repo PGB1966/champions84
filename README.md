@@ -174,10 +174,12 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
   MD), **STUN/BODY/END totals (max)**, REC, and movement (incl. Vivian's
   Clinging). 6E treats these as independent (not figured), so they're all
   editable — update them when a player spends XP, no code change needed. An edit
-  writes the whole override to `characters/<id>` and syncs live to that player's
-  sheet (needs the `characters` DB rule). The *current* STUN/BODY/END values
-  (the in-combat +/- trackers) stay local — each person tracks their own; the
-  GM edits only the totals.
+  writes the stat keys to `characters/<id>` (via `update`) and syncs live to
+  that player's sheet (needs the `characters` DB rule).
+- **Current STUN/BODY/END sync too** — the in-combat +/- trackers, Recovery,
+  and END/STUN spend all write `characters/<id>/current` (dual control: GM *or*
+  player can adjust, last write wins). So HP is shared and persists across
+  reloads, and the downed-lock state stays consistent on every screen.
 - **Dice Tools** panel: To-hit (OCV), a generic Nd6 roller (default 3d6),
   Normal/Killing damage, Knockback, and a **HAP** button (2d6 Heroic Action
   Points).
