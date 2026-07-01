@@ -77,17 +77,42 @@ function whoLabel(character) {
   return `${character.player ? character.player + " · " : ""}${character.name}`;
 }
 
-// Pay END from the character's pool (clamped at 0). Appends a log line and
-// returns true if a deduction happened (caller re-renders to update the bar).
+// STUN spent per 1 END of shortfall when a character runs out of END (6E:
+// 1 STUN = 1 END). Table-confirmable — change here if your group differs.
+const STUN_PER_END = 1;
+
+// Pay an END cost from the character's END pool; once END hits 0, pay the
+// remainder from STUN automatically (Hero "using STUN for END"). Appends a log
+// line and returns true if anything was spent (caller re-renders the bars).
 function deductEnd(character, endCost, lines) {
   const pool = character.health?.END;
   if (!(endCost > 0 && pool)) return false;
-  const before = pool.current;
-  pool.current = Math.max(0, before - endCost);
-  const spent = before - pool.current;
-  lines.push(spent < endCost
-    ? `END: −${spent} (${before} → 0) — short ${endCost - spent}, push or take STUN`
-    : `END: −${endCost} (${before} → ${pool.current})`);
+
+  const endBefore = pool.current;
+  pool.current = Math.max(0, endBefore - endCost);
+  const endSpent = endBefore - pool.current;
+  const shortfall = endCost - endSpent;
+
+  if (shortfall <= 0) {
+    lines.push(`END: −${endCost} (${endBefore} → ${pool.current})`);
+    return true;
+  }
+
+  // Out of END — cover the rest with STUN.
+  const stun = character.health?.STUN;
+  if (!stun) {
+    lines.push(`END: −${endSpent} (${endBefore} → 0) — short ${shortfall} END`);
+    return true;
+  }
+  const stunNeed = shortfall * STUN_PER_END;
+  const stunBefore = stun.current;
+  stun.current = Math.max(0, stunBefore - stunNeed);
+  const stunTaken = stunBefore - stun.current;
+
+  const endPart = endSpent > 0 ? `END: −${endSpent} (${endBefore} → 0); ` : "out of END; ";
+  let line = `${endPart}took ${stunTaken} STUN for ${shortfall} END (STUN ${stunBefore} → ${stun.current})`;
+  if (stunTaken < stunNeed) line += ` — also out of STUN, short ${stunNeed - stunTaken}`;
+  lines.push(line);
   return true;
 }
 
