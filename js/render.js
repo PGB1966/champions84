@@ -139,16 +139,19 @@ function xpTracker(character, onChange) {
 // `onChange(character, kind, newCurrent)` is called after a clamp-adjusted edit
 // so the host can persist / re-render. Pure display otherwise.
 function healthTracker(character, kind, pool, onChange) {
+  // STUN may go negative down to −max (deeply KO'd); BODY/END floor at 0.
+  const floor = kind === "STUN" ? -pool.max : 0;
   const pct = pool.max > 0 ? Math.max(0, Math.min(100, (pool.current / pool.max) * 100)) : 0;
-  const valueLabel = el("span", { class: "track-value" }, `${pool.current} / ${pool.max}`);
+  const valueLabel = el("span", { class: "track-value" + (pool.current < 0 ? " negative" : "") }, `${pool.current} / ${pool.max}`);
   const fill = el("div", { class: `track-fill track-${kind.toLowerCase()}`, style: `width:${pct}%` });
 
-  function adjust(delta) {
-    const next = Math.max(0, Math.min(pool.max, pool.current + delta));
+  function setTo(next) {
+    next = Math.max(floor, Math.min(pool.max, next));
     if (next === pool.current) return;
     pool.current = next;
     if (typeof onChange === "function") onChange(character, kind, next);
   }
+  const adjust = (delta) => setTo(pool.current + delta);
 
   return el("div", { class: "tracker" }, [
     el("div", { class: "track-head" }, [
@@ -161,7 +164,7 @@ function healthTracker(character, kind, pool, onChange) {
       el("button", { class: "step", type: "button", "aria-label": `${kind} -1`, onClick: () => adjust(-1) }, "−1"),
       el("button", { class: "step", type: "button", "aria-label": `${kind} +1`, onClick: () => adjust(1) }, "+1"),
       el("button", { class: "step", type: "button", "aria-label": `${kind} +5`, onClick: () => adjust(5) }, "+5"),
-      el("button", { class: "step step-full", type: "button", onClick: () => adjust(pool.max) }, "Full")
+      el("button", { class: "step step-full", type: "button", onClick: () => setTo(pool.max) }, "Full")
     ])
   ]);
 }

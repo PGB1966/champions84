@@ -281,6 +281,7 @@ body {
 .track-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
 .track-label { font-weight: 800; letter-spacing: 1px; }
 .track-value { font-variant-numeric: tabular-nums; color: var(--ink-dim); font-weight: 600; }
+.track-value.negative { color: var(--accent-2); }
 .track-bar {
   height: 12px;
   border-radius: 999px;

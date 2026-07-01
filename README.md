@@ -176,6 +176,8 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
   editable — update them when a player spends XP, no code change needed. An edit
   writes the stat keys to `characters/<id>` (via `update`) and syncs live to
   that player's sheet (needs the `characters` DB rule).
+- **STUN can go negative** down to −max (deeply KO'd); BODY and END floor at 0.
+  Negative STUN shows in red; "Full" always restores to max.
 - **Current STUN/BODY/END sync too** — the in-combat +/- trackers, Recovery,
   and END/STUN spend all write `characters/<id>/current` (dual control: GM *or*
   player can adjust, last write wins). So HP is shared and persists across

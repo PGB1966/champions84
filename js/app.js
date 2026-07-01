@@ -51,7 +51,8 @@ function applyCharOverrides(data) {
     if (ov.current && c.health) {
       for (const k of Object.keys(ov.current)) {
         if (c.health[k] && typeof ov.current[k] === "number") {
-          c.health[k].current = Math.max(0, Math.min(c.health[k].max, ov.current[k]));
+          const floor = k === "STUN" ? -c.health[k].max : 0; // STUN may be negative
+          c.health[k].current = Math.max(floor, Math.min(c.health[k].max, ov.current[k]));
         }
       }
     }
