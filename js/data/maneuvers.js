@@ -22,7 +22,7 @@ export function standardManeuvers(character) {
     { id: "haymaker", name: "Haymaker", phase: "½*", ocv: "+0", dcv: "−5", effect: "+4 DC; takes +1 Segment to perform", roll: { ocvMod: 0, dice: sd + 4, damageType: "normal", endCost: strEnd } },
     { id: "moveby", name: "Move By", phase: "½", ocv: "−2", dcv: "−2", effect: "STR/2 + v/10; you take ⅓", roll: { ocvMod: -2, velocity: "moveby", damageType: "normal", endCost: strEnd } },
     { id: "movethrough", name: "Move Through", phase: "½", ocv: "−v/5", dcv: "−3", effect: "STR + v/6; you take ½ or full", roll: { velocity: "movethrough", damageType: "normal", endCost: strEnd } },
-    { id: "multiple", name: "Multiple Attack", phase: "1", ocv: "Var", dcv: "½", effect: "Attack multiple times at a cumulative −2 OCV per attack", roll: { multiple: true } },
+    { id: "multiple", name: "Multiple Attack", phase: "1", ocv: "Var", dcv: "½", effect: "Attack multiple times; −2 OCV per attack after the first, to all rolls", roll: { multiple: true } },
     { id: "set", name: "Set", phase: "1", ocv: "+1", dcv: "+0", effect: "Ranged attacks only; take aim", roll: { commit: true } },
     { id: "shove", name: "Shove", phase: "½", ocv: "−1", dcv: "−1", effect: "Push target 1m per 5 STR", roll: { ocvMod: -1, tohit: true, note: "On a hit, push the target 1m per 5 STR." } },
     { id: "strike", name: "Strike", phase: "½", ocv: "+0", dcv: "+0", effect: "STR (or weapon) damage", roll: { ocvMod: 0, dice: sd, damageType: "normal", endCost: strEnd } },

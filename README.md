@@ -198,8 +198,8 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
     and deduct STR END (STR÷10). Move By / Move Through add a velocity input.
   - **To-hit** (Block/Disarm/Shove/Trip/Grab/Grab By): a to-hit roll at the
     maneuver's OCV mod, plus its effect note.
-  - **Multiple Attack**: pick a count → that many to-hit rolls at an escalating
-    −2 OCV per attack.
+  - **Multiple Attack**: pick a count → that many to-hit rolls, all at a flat
+    −2 OCV per attack after the first (6E by-the-book).
   - **Commit** (Brace/Dodge/Set): a button that posts the declared maneuver
     (mods + effect) to the shared log — no roll.
 - **Double Helix VPP delivery rolls** — touch powers roll a **Grab** (OCV −1)

@@ -171,17 +171,18 @@ function onToHitManeuver(character, maneuver) {
   route();
 }
 
-// Multiple Attack: N to-hit rolls at an escalating −2 OCV per attack.
+// Multiple Attack (6E): −2 OCV per attack after the first, applied as a flat
+// penalty to ALL of the attack rolls.
 function onMultipleAttack(character, count) {
   const n = Math.max(2, Math.min(12, count || 2));
   const ocv = character.derived?.OCV ?? 0;
+  const pen = -2 * (n - 1);
   const lines = [];
   for (let i = 0; i < n; i++) {
-    const pen = -2 * i;
     const r = rollToHit({ ocv: ocv + pen, rng: Math.random });
     lines.push(`Attack ${i + 1} (OCV ${pen >= 0 ? "+" : ""}${pen}) 3d6 [${r.faces.join(",")}] = ${r.total} — hits DCV ${r.hitsDcv}`);
   }
-  lines.push("Roll each hit's damage separately; you're at ½ DCV this phase.");
+  lines.push(`All rolls at OCV ${pen} (−2 per attack after the first). Roll each hit's damage separately; you're at ½ DCV this phase.`);
   addRoll({ who: whoLabel(character), label: `Multiple Attack (×${n})`, lines });
   route();
 }
