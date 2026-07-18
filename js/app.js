@@ -5,8 +5,11 @@ import { characters, routes, routeOrder } from "./data/index.js";
 import { renderCharacter, renderDashboard } from "./render.js";
 import { buildRollPanel } from "./rollpanel.js";
 import { DELIVERY_LABEL, getMode, modeMaxDice, apAt, endAt, slotAP } from "./vpp.js";
-import { rollPower, pulledEndCost, rollCheck, rollEffectDice } from "./dice/hero.js";
-import { describePower, describeCheck, describeVpp } from "./dice/format.js";
+import {
+  rollPower, pulledEndCost, rollCheck, rollEffectDice,
+  rollToHit, rollNormalDamage, rollKillingDamage, rollHitLocation, locationByName
+} from "./dice/hero.js";
+import { describePower, describeCheck, describeVpp, describeToHit, describeNormal, describeKilling } from "./dice/format.js";
 import { addRoll, initLog, setPhase, setCharacterOverride, setCharacterCurrent, subscribeCharacters } from "./log.js";
 
 const appEl = document.getElementById("app");
@@ -134,6 +137,41 @@ function deductEnd(character, endCost, lines) {
   return true;
 }
 
+// --- hit location ----------------------------------------------------------
+// A called shot (location name), "random" (roll 3d6 at attack time), or "none".
+// Applies to the next single-target attack, then clears.
+let pendingLocation = "none";
+
+function onSetHitLocation(value) {
+  pendingLocation = value || "none";
+  route();
+}
+
+// Resolve and clear the pending hit location for an attack. Area attacks ignore
+// it. Returns { location, rollInfo } (rollInfo = a log line for random rolls).
+function consumeHitLocation(isAoe) {
+  const sel = pendingLocation;
+  pendingLocation = "none";
+  if (isAoe || !sel || sel === "none") return { location: null, rollInfo: null };
+  if (sel === "random") {
+    const hl = rollHitLocation(Math.random);
+    return { location: hl.location, rollInfo: `location roll 3d6 [${hl.faces.join(",")}] = ${hl.total} → ${hl.location.name}` };
+  }
+  return { location: locationByName(sel), rollInfo: null };
+}
+
+// Grab (and Grab By): a to-hit at the maneuver's OCV penalty; success grabs.
+function onGrab(character, maneuver) {
+  const ocvMod = maneuver.roll?.ocvMod || 0;
+  const r = rollToHit({ ocv: (character.derived?.OCV ?? 0) + ocvMod, rng: Math.random });
+  const lines = [
+    describeToHit(r),
+    "Grab: success if the target's DCV ≤ the hit number, then STR vs STR to hold."
+  ];
+  addRoll({ who: whoLabel(character), label: `${maneuver.name} (OCV ${ocvMod >= 0 ? "+" : ""}${ocvMod})`, lines });
+  route();
+}
+
 // Resolve a power through the dice engine, pay its END, and post to the log.
 // Attacks (damageType / rollType "attackRoll") do to-hit + damage and accept
 // `chosenDice` to pull the punch. Other powers with a rollType (Aid, Heal,
@@ -143,13 +181,16 @@ function onRollPower(character, power, chosenDice) {
   let lines, label, endCost;
 
   if (isAttack) {
+    const { location, rollInfo } = consumeHitLocation(Boolean(power.aoe));
     const result = rollPower({
       power: { type: "Blast", ...power },
       ocv: character.derived?.OCV ?? 0,
       dice: chosenDice,
+      hitLocation: location,
       rng: Math.random
     });
     lines = describePower(result);
+    if (rollInfo) lines.splice(1, 0, rollInfo); // after the hit-location header line
     endCost = pulledEndCost(power, result.dice);
     label = `${power.name} — ${result.dice}d6 (${endCost} END${result.pulled ? ", pulled" : ""})`;
   } else {
@@ -267,19 +308,34 @@ function onRollVpp(character, entry, modeKey) {
   const max = modeMaxDice(mode);
   const dice = max ? Math.max(1, Math.min(max, slot.dice || max)) : 0;
   const diceExpr = `${dice}d6`;
-  let lines;
+  const ocv = character.derived?.OCV ?? 0;
+  const lines = [];
+  const isSelfBoost = entry.rollType === "addToCharacteristic" && slot.self !== false;
+
+  // How the power reaches its target: touch needs a Grab (OCV −1), ranged a
+  // normal to-hit, area/self neither.
+  if (entry.rollType !== "adjudicated" && !isSelfBoost) {
+    if (modeKey === "self_or_touch") {
+      const g = rollToHit({ ocv: ocv - 1, rng: Math.random });
+      lines.push(`Grab (OCV −1) 3d6 [${g.faces.join(",")}] = ${g.total} — grabs DCV ${g.hitsDcv} or lower; then STR vs STR`);
+    } else if (modeKey === "ranged") {
+      lines.push(describeToHit(rollToHit({ ocv, rng: Math.random })));
+    }
+  }
 
   if (entry.rollType === "adjudicated") {
-    lines = ["Activated — effect adjudicated by GM (no die roll)"];
+    lines.push("Activated — effect adjudicated by GM (no die roll)");
   } else if (entry.rollType === "attackRoll") {
-    const power = { name: entry.name, type: "Blast", totalDice: diceExpr, damageType: entry.damageType || "normal" };
-    lines = describePower(rollPower({
-      power, ocv: character.derived?.OCV ?? 0, rng: Math.random
-    }));
+    const { location, rollInfo } = consumeHitLocation(modeKey === "area_selective");
+    if (rollInfo) lines.push(rollInfo);
+    const dmg = entry.damageType === "killing"
+      ? rollKillingDamage({ dice: diceExpr, hitLocation: location, rng: Math.random })
+      : rollNormalDamage({ dice: diceExpr, hitLocation: location, rng: Math.random });
+    lines.push(dmg.kind === "killingDamage" ? describeKilling(dmg) : describeNormal(dmg));
+    if (location) lines.push(`hit location: ${location.name} (OCV ${location.ocv})`);
   } else {
     const r = rollEffectDice({ dice: diceExpr, rng: Math.random });
-    lines = [describeVpp({ ...entry, dice: diceExpr }, r)];
-    // Self-targeted Aid to a characteristic updates the sheet.
+    lines.push(describeVpp({ ...entry, dice: diceExpr }, r));
     if (entry.rollType === "addToCharacteristic" && slot.self !== false) {
       const t = entry.target;
       if (t === "SPD") {
@@ -330,7 +386,8 @@ function isDowned(c) {
 function sheetOptions(character) {
   const downed = isDowned(character);
   return {
-    onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers,
+    onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover,
+    onGrab, onSetHitLocation, pendingLocation, vppHandlers,
     downed, locked: downed && !IS_GM
   };
 }

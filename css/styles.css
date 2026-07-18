@@ -407,6 +407,32 @@ body {
 .chip-btn:hover:not(:disabled) { background: var(--accent); color: #1a1305; }
 .chip-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--line); color: var(--ink-dim); }
 
+/* ---- hit location selector ---- */
+.hitloc-note { margin: 0 0 10px; font-size: 12px; color: var(--ink-dim); }
+.hitloc-bar { display: flex; flex-wrap: wrap; gap: 6px; }
+.hitloc-btn {
+  border: 1px solid var(--line); background: var(--bg-panel-2); color: var(--ink-dim);
+  border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.hitloc-btn:hover { color: var(--ink); border-color: var(--accent); }
+.hitloc-btn.active { background: var(--accent); color: #1a1305; border-color: var(--accent); }
+
+/* ---- standard combat maneuvers table ---- */
+.maneuver-table { display: flex; flex-direction: column; gap: 6px; }
+.maneuver-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--bg-panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; flex-wrap: wrap;
+}
+.mvr-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.mvr-name { font-weight: 800; }
+.mvr-mods { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.mvr-effect { font-size: 12px; color: var(--ink-dim); }
+.maneuver-btn { margin-top: 0; width: auto; flex: 0 0 auto; padding: 7px 16px; }
+.vel-roll { display: flex; align-items: flex-end; gap: 8px; flex: 0 0 auto; }
+.vel-input { width: 56px; }
+
 /* ---- martial arts maneuvers ---- */
 .maneuver-list { display: flex; flex-direction: column; gap: 10px; }
 .maneuver {

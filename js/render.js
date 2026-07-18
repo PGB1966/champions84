@@ -2,9 +2,10 @@
 // Every section reads from the character object and degrades gracefully when a
 // field is absent, so partially-defined characters still render what they have.
 import { parseDiceCount } from "./dice/dice.js";
-import { pulledEndCost } from "./dice/hero.js";
+import { pulledEndCost, HIT_LOCATIONS } from "./dice/hero.js";
 import { renderVpp } from "./vpp.js";
 import { subscribePhase, getPhase } from "./log.js";
+import { standardManeuvers, velocityManeuverDice, movethroughOcvMod } from "./data/maneuvers.js";
 
 // --- tiny DOM helper -------------------------------------------------------
 function el(tag, attrs = {}, children = []) {
@@ -243,6 +244,64 @@ function section(title, body) {
   ]);
 }
 
+// Hit-location selector: "None", each location (called shot, shows OCV penalty),
+// and "Random" (3d6 at roll time). Selection applies to the next attack, then
+// clears. `pending` is the current selection ("none" | name | "random").
+function hitLocationBar(pending, onSetHitLocation) {
+  const btn = (value, label, title) => {
+    const active = (pending || "none") === value;
+    return el("button", {
+      class: "hitloc-btn" + (active ? " active" : ""), type: "button", title,
+      onClick: () => onSetHitLocation(value)
+    }, label);
+  };
+  const buttons = [btn("none", "None", "No called shot")];
+  for (const l of HIT_LOCATIONS) buttons.push(btn(l.name, l.name, `Called shot: ${l.name} (OCV ${l.ocv})`));
+  buttons.push(btn("random", "Random", "Roll 3d6 for location at attack time"));
+  return el("div", {}, [
+    el("p", { class: "hitloc-note" }, "Pick a location to apply to your next single-target attack (adds its OCV penalty and damage multipliers). Ignored for area attacks."),
+    el("div", { class: "hitloc-bar" }, buttons)
+  ]);
+}
+
+// Standard combat maneuvers table (universal). Damage maneuvers roll via
+// onRollPower (built power object); Grab maneuvers via onGrab (to-hit only).
+function standardManeuversTable(character, { onRollPower, onGrab }) {
+  const rows = standardManeuvers(character).map((m) => {
+    let action = null;
+    if (m.roll && (onRollPower || onGrab)) {
+      if (m.roll.grab && typeof onGrab === "function") {
+        action = el("button", { class: "roll-btn maneuver-btn", type: "button",
+          onClick: () => onGrab(character, m) }, "Grab");
+      } else if (m.roll.velocity && typeof onRollPower === "function") {
+        const vel = el("input", { type: "number", class: "num vel-input", value: "0", min: "0", title: "velocity (m)" });
+        action = el("div", { class: "vel-roll" }, [
+          el("label", { class: "field" }, [el("span", {}, "v (m)"), vel]),
+          el("button", { class: "roll-btn maneuver-btn", type: "button", onClick: () => {
+            const v = parseInt(vel.value, 10) || 0;
+            const dice = velocityManeuverDice(m.roll.velocity, character, v);
+            const ocvMod = m.roll.velocity === "movethrough" ? movethroughOcvMod(v) : (m.roll.ocvMod || 0);
+            onRollPower(character, { name: `${m.name} (v ${v})`, type: "HTH", totalDice: `${dice}d6`, damageType: m.roll.damageType, ocvMod });
+          } }, "Roll")
+        ]);
+      } else if (m.roll.dice && typeof onRollPower === "function") {
+        action = el("button", { class: "roll-btn maneuver-btn", type: "button", onClick: () =>
+          onRollPower(character, { name: m.name, type: "HTH", totalDice: `${m.roll.dice}d6`, damageType: m.roll.damageType, ocvMod: m.roll.ocvMod || 0 })
+        }, "Roll");
+      }
+    }
+    return el("div", { class: "maneuver-row" }, [
+      el("div", { class: "mvr-main" }, [
+        el("span", { class: "mvr-name" }, m.name),
+        el("span", { class: "mvr-mods" }, `Ph ${m.phase} · OCV ${m.ocv} · DCV ${m.dcv}`),
+        el("span", { class: "mvr-effect" }, m.effect)
+      ]),
+      action
+    ]);
+  });
+  return el("div", { class: "maneuver-table" }, rows);
+}
+
 // --- GM dashboard ----------------------------------------------------------
 // Compact card per PC: name (links to the full sheet), quick combat stats, and
 // the STUN/BODY/END trackers (editable, so the GM can track damage live).
@@ -391,7 +450,7 @@ function plainList(items) {
   return el("ul", { class: "plain-list" }, items.map((s) => el("li", {}, s)));
 }
 
-export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, vppHandlers, downed, locked } = {}) {
+export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, onGrab, onSetHitLocation, pendingLocation, vppHandlers, downed, locked } = {}) {
   const root = el("article", { class: "sheet", dataset: { characterId: character.id } });
 
   // Identity header
@@ -474,6 +533,11 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
         character.maneuvers.map((m) => maneuverRow(m, character, onRollPower)))));
   }
 
+  // Standard combat maneuvers (universal to every character).
+  if (typeof onRollPower === "function" || typeof onGrab === "function") {
+    root.appendChild(section("Combat Maneuvers", standardManeuversTable(character, { onRollPower, onGrab })));
+  }
+
   // Movement — 6E standard for everyone, overridable per character.
   const movement = { ...STANDARD_MOVEMENT, ...(character.movement || {}) };
   const moveOrder = [...MOVEMENT_ORDER, ...Object.keys(movement).filter((k) => !MOVEMENT_ORDER.includes(k))];
@@ -481,6 +545,11 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
 
   if (character.xp) {
     root.appendChild(section("Experience", xpTracker(character, onHealthChange)));
+  }
+
+  // Hit-location selector — applies to the next single-target attack.
+  if (typeof onSetHitLocation === "function") {
+    root.appendChild(section("Hit Location", hitLocationBar(pendingLocation, onSetHitLocation)));
   }
 
   if (character.powers && character.powers.length) {
@@ -534,7 +603,7 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
   }
   if (locked) {
     root.classList.add("sheet-locked");
-    const SEL = ".roll-btn, .chip-btn, .ghost-btn, .stat-actionable, .roll-note-actionable, .seg, .self-check, .vpp-dice .step";
+    const SEL = ".roll-btn, .chip-btn, .ghost-btn, .stat-actionable, .roll-note-actionable, .seg, .self-check, .vpp-dice .step, .hitloc-btn, .vel-input";
     root.querySelectorAll(SEL).forEach((elm) => {
       if (elm.tagName === "BUTTON" || elm.tagName === "INPUT") elm.disabled = true;
       elm.classList.add("locked-ctrl");

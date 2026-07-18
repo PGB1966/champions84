@@ -3,7 +3,8 @@
 // scriptedRng([4,2,6]) makes rollDie() return 4, then 2, then 6.
 import { rollDie, rollDice, parseDiceCount } from "../js/dice/dice.js";
 import {
-  rollToHit, rollNormalDamage, rollKillingDamage, rollKnockback, rollPower, pulledEndCost, rollCheck, rollEffectDice
+  rollToHit, rollNormalDamage, rollKillingDamage, rollKnockback, rollPower, pulledEndCost, rollCheck, rollEffectDice,
+  locationByName, rollHitLocation, strDamageDice
 } from "../js/dice/hero.js";
 import { charRoll } from "../js/render.js";
 
@@ -83,6 +84,35 @@ const tests = {
     // target 11, roll 5+5+5 = 15 -> fail by 4
     const f = rollCheck({ target: 11, rng: scriptedRng([5, 5, 5]) });
     eq([f.total, f.success, f.margin], [15, false, -4], "fail");
+  },
+
+  "hit location: normal damage multipliers (Head ×2 STUN, ×2 BODY)"() {
+    // 3d6 = [6,6,6] -> base 18 STUN, 6 BODY; Head nStun 2, bodyx 2
+    const r = rollNormalDamage({ dice: "3d6", hitLocation: locationByName("Head"), rng: scriptedRng([6, 6, 6]) });
+    eq([r.baseStun, r.stun, r.baseBody, r.body], [18, 36, 6, 12], "head normal");
+  },
+
+  "hit location: killing uses STUNx not ½d6 (Vitals ×2 BODY, ×4 STUN)"() {
+    // 2d6 = [5,6] = 11 base BODY; Vitals bodyx 2 -> 22 BODY, stunx 4 -> 88 STUN
+    const r = rollKillingDamage({ dice: "2d6", hitLocation: locationByName("Vitals"), rng: scriptedRng([5, 6]) });
+    eq([r.baseBody, r.body, r.multiplier, r.stun], [11, 22, 4, 88], "vitals killing");
+  },
+
+  "rollHitLocation: 3d6 maps to the table (13 -> Vitals)"() {
+    const r = rollHitLocation(scriptedRng([4, 4, 5])); // 13
+    eq([r.total, r.location.name], [13, "Vitals"], "random location");
+  },
+
+  "rollPower: hit location adds OCV penalty to the to-hit"() {
+    // Head OCV -8; ocv 7 -> hits DCV 11 + (7-8) - roll. roll [4,4,4]=12 -> 11 + (-1) - 12 = -2
+    const power = { name: "Punch", type: "HTH", totalDice: "3d6", damageType: "normal" };
+    const r = rollPower({ power, ocv: 7, hitLocation: locationByName("Head"), rng: scriptedRng([4, 4, 4, 6, 6, 6]) });
+    eq(r.toHit.hitsDcv, -2, "location OCV penalty applied");
+    eq([r.damage.stun, r.damage.body], [36, 12], "located damage"); // 18*2, 6*2
+  },
+
+  "strDamageDice: STR ÷ 5 rounded"() {
+    eq([strDamageDice(40), strDamageDice(13), strDamageDice(10)], [8, 3, 2], "str dice");
   },
 
   "rollEffectDice: sum of Nd6 (VPP Aid/Drain/Suppress/Heal)"() {

@@ -42,10 +42,16 @@ export function describeVpp(entry, r) {
 }
 
 export function describeNormal(r) {
+  if (r.hitLocation) {
+    return `${r.dice}d6 normal [${diceList(r.faces)}] = ${r.baseStun}→${r.stun} STUN (×${r.hitLocation.nStun}), ${r.baseBody}→${r.body} BODY (×${r.hitLocation.bodyx}) — pre-defense`;
+  }
   return `${r.dice}d6 normal [${diceList(r.faces)}] = ${r.stun} STUN, ${r.body} BODY`;
 }
 
 export function describeKilling(r) {
+  if (r.hitLocation) {
+    return `${r.dice}d6 killing [${diceList(r.bodyFaces)}] = ${r.baseBody}→${r.body} BODY (×${r.hitLocation.bodyx}), STUN = ${r.body} × ${r.hitLocation.stunx} = ${r.stun} — pre-defense`;
+  }
   const mult = r.multiplierMode === "1d6" ? `1d6=${r.multiplierRoll}` : `½d6=${r.multiplier}`;
   return `${r.dice}d6 killing [${diceList(r.bodyFaces)}] = ${r.body} BODY × ${r.multiplier} (${mult}) = ${r.stun} STUN`;
 }
@@ -58,6 +64,7 @@ export function describeKnockback(r) {
 // A full power resolution -> a one-line headline plus detail lines.
 export function describePower(r) {
   const lines = [];
+  if (r.hitLocation) lines.push(`hit location: ${r.hitLocation.name} (OCV ${r.hitLocation.ocv})`);
   lines.push(describeToHit(r.toHit));
   if (r.pulled) lines.push(`pulled punch: ${r.dice}d6 of ${r.fullDice}d6`);
   if (r.damage) {

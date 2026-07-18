@@ -19,6 +19,39 @@ export const CONVENTIONS = {
   knockbackMetersPerPoint: 2
 };
 
+// Hit Location table (6E). stunx = killing STUN multiplier (BODY × stunx);
+// nStun = normal-damage STUN multiplier; bodyx = BODY multiplier (all attacks);
+// ocv = penalty to hit that location on a called shot. `roll` is the 3d6 range.
+export const HIT_LOCATIONS = [
+  { name: "Head",      lo: 3,  hi: 5,  stunx: 5, nStun: 2,   bodyx: 2,   ocv: -8 },
+  { name: "Hands",     lo: 6,  hi: 6,  stunx: 1, nStun: 0.5, bodyx: 0.5, ocv: -6 },
+  { name: "Arms",      lo: 7,  hi: 8,  stunx: 2, nStun: 0.5, bodyx: 0.5, ocv: -5 },
+  { name: "Shoulders", lo: 9,  hi: 9,  stunx: 3, nStun: 1,   bodyx: 1,   ocv: -5 },
+  { name: "Chest",     lo: 10, hi: 11, stunx: 3, nStun: 1,   bodyx: 1,   ocv: -3 },
+  { name: "Stomach",   lo: 12, hi: 12, stunx: 4, nStun: 1.5, bodyx: 1,   ocv: -7 },
+  { name: "Vitals",    lo: 13, hi: 13, stunx: 4, nStun: 1.5, bodyx: 2,   ocv: -8 },
+  { name: "Thighs",    lo: 14, hi: 14, stunx: 2, nStun: 1,   bodyx: 1,   ocv: -4 },
+  { name: "Legs",      lo: 15, hi: 16, stunx: 2, nStun: 0.5, bodyx: 0.5, ocv: -6 },
+  { name: "Feet",      lo: 17, hi: 18, stunx: 1, nStun: 0.5, bodyx: 0.5, ocv: -8 }
+];
+
+export function locationByName(name) {
+  return HIT_LOCATIONS.find((l) => l.name === name) || null;
+}
+
+// Roll 3d6 for a random hit location; returns { location, faces, total }.
+export function rollHitLocation(rng) {
+  const faces = rollDice(3, rng);
+  const total = sum(faces);
+  const location = HIT_LOCATIONS.find((l) => total >= l.lo && total <= l.hi) || null;
+  return { location, faces, total };
+}
+
+// STR damage in d6 (STR ÷ 5, rounded), for HTH maneuvers.
+export function strDamageDice(str) {
+  return Math.max(0, Math.round((str || 0) / 5));
+}
+
 // --- to-hit ----------------------------------------------------------------
 // 3d6. Reports the highest DCV this roll hits: hitsDcv = 11 + OCV - 3d6. The
 // table compares that to the target's actual DCV (no target entry needed). A
@@ -61,29 +94,49 @@ export function rollEffectDice({ dice, rng } = {}) {
 
 // --- normal damage ---------------------------------------------------------
 // Nd6. STUN = sum. BODY per die: 1 -> 0, 2-5 -> 1, 6 -> 2.
-export function rollNormalDamage({ dice, rng } = {}) {
+// With a hit location: STUN ×= nStun, BODY ×= bodyx (applied to raw / pre-defense).
+export function rollNormalDamage({ dice, hitLocation = null, rng } = {}) {
   const n = parseDiceCount(dice);
   const faces = rollDice(n, rng);
   let body = 0;
   for (const f of faces) body += f === 1 ? 0 : f === 6 ? 2 : 1;
-  return { kind: "normalDamage", faces, dice: n, stun: sum(faces), body };
+  const stun = sum(faces);
+  const r = { kind: "normalDamage", faces, dice: n, stun, body };
+  if (hitLocation) {
+    r.hitLocation = hitLocation;
+    r.stun = Math.round(stun * hitLocation.nStun);
+    r.body = Math.round(body * hitLocation.bodyx);
+    r.baseStun = stun;
+    r.baseBody = body;
+  }
+  return r;
 }
 
 // --- killing damage --------------------------------------------------------
 // Nd6 for BODY (= sum). Separate STUN-multiplier die; STUN = BODY x multiplier.
-export function rollKillingDamage({ dice, multiplierMode = CONVENTIONS.killingStunMultiplier, rng } = {}) {
+// With a hit location: BODY ×= bodyx, and STUN = BODY × stunx (no ½d6 roll).
+export function rollKillingDamage({ dice, multiplierMode = CONVENTIONS.killingStunMultiplier, hitLocation = null, rng } = {}) {
   const n = parseDiceCount(dice);
   const bodyFaces = rollDice(n, rng);
-  const body = sum(bodyFaces);
+  const rawBody = sum(bodyFaces);
+  if (hitLocation) {
+    const body = Math.round(rawBody * hitLocation.bodyx);
+    return {
+      kind: "killingDamage",
+      bodyFaces, dice: n, body, baseBody: rawBody,
+      hitLocation, multiplier: hitLocation.stunx,
+      stun: body * hitLocation.stunx
+    };
+  }
   const multiplierRoll = rollDice(1, rng)[0];
   const multiplier = multiplierMode === "1d6"
     ? multiplierRoll
     : Math.ceil(multiplierRoll / 2); // 1-2->1, 3-4->2, 5-6->3
   return {
     kind: "killingDamage",
-    bodyFaces, dice: n, body,
+    bodyFaces, dice: n, body: rawBody,
     multiplierRoll, multiplier, multiplierMode,
-    stun: body * multiplier
+    stun: rawBody * multiplier
   };
 }
 
@@ -125,7 +178,7 @@ export function pulledEndCost(power, chosenDice) {
 // dice/pulled state; the UI decides how to label/log them.
 const PHYSICAL_TYPES = new Set(["HA", "HTH", "HKA"]);
 
-export function rollPower({ power, ocv = 0, dice, rng } = {}) {
+export function rollPower({ power, ocv = 0, dice, hitLocation = null, rng } = {}) {
   const ocvMod = power.ocvMod || 0;
   const fullDice = parseDiceCount(power.totalDice);
   const useDice = dice == null
@@ -133,14 +186,16 @@ export function rollPower({ power, ocv = 0, dice, rng } = {}) {
     : Math.max(1, Math.min(fullDice, Math.trunc(dice)));
   const pulled = useDice < fullDice;
 
-  const toHit = rollToHit({ ocv: ocv + ocvMod, rng });
+  // A called/random hit location adds its OCV penalty to the to-hit.
+  const locOcv = hitLocation ? (hitLocation.ocv || 0) : 0;
+  const toHit = rollToHit({ ocv: ocv + ocvMod + locOcv, rng });
 
   let damage = null;
   let knockback = null;
   if (power.damageType === "killing") {
-    damage = rollKillingDamage({ dice: useDice, rng });
+    damage = rollKillingDamage({ dice: useDice, hitLocation, rng });
   } else if (power.damageType === "normal") {
-    damage = rollNormalDamage({ dice: useDice, rng });
+    damage = rollNormalDamage({ dice: useDice, hitLocation, rng });
   }
 
   // Knockback for physical attacks that did BODY. A power's knockbackBonus
@@ -150,5 +205,5 @@ export function rollPower({ power, ocv = 0, dice, rng } = {}) {
     knockback = rollKnockback({ body: damage.body, kbDice, rng });
   }
 
-  return { kind: "power", power, ocv, ocvMod, fullDice, dice: useDice, pulled, toHit, damage, knockback };
+  return { kind: "power", power, ocv, ocvMod, fullDice, dice: useDice, pulled, hitLocation, toHit, damage, knockback };
 }

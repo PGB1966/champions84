@@ -32,7 +32,7 @@ export const irieBlaze = {
           { id: "flame_shield", name: "Flame Shield", type: "Force Field", endCost: 3, cost: "26 AP",
             description: "Force Field 13 PD / 13 ED. Costs END, OAF (Dreadlocks)." },
           { id: "solar_flare", name: "Solar Flare", type: "Blast", totalDice: "4d6", damageType: "normal",
-            endCost: 3, cost: "32 AP", conditions: ["requires_sunlight"],
+            endCost: 3, cost: "32 AP", conditions: ["requires_sunlight"], aoe: true,
             description: "Energy Blast 4d6, AoE 6m Radius, 4 shots. OAF (Dreadlocks)." }
         ]
       },

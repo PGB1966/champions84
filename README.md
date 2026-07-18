@@ -185,6 +185,20 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
 - **Dice Tools** panel: To-hit (OCV), a generic Nd6 roller (default 3d6),
   Normal/Killing damage, Knockback, and a **HAP** button (2d6 Heroic Action
   Points).
+- **Hit location** — a selector above Powers (`HIT_LOCATIONS` in
+  `js/dice/hero.js`). Pick a called shot (adds its OCV penalty and STUN/BODY
+  multipliers) or **Random** (3d6 at attack time); it applies to the next
+  single-target attack, then clears. Ignored for area attacks (`aoe: true`).
+  Multipliers apply to the raw pre-defense numbers (the table's "after defenses"
+  order can't be automated); the log shows base→located.
+- **Standard combat maneuvers** — every sheet has a "Combat Maneuvers" section
+  (`js/data/maneuvers.js`). Strike/Haymaker/Throw roll STR damage
+  (`strDamageDice` = STR÷5); Move By / Move Through take a velocity input
+  (formulas are best-effort table readings — verify); Grab/Grab By roll to-hit
+  only. The rest are reference rows. STR maneuvers don't yet deduct END.
+- **Double Helix VPP delivery rolls** — touch powers roll a **Grab** (OCV −1)
+  first, ranged powers roll a normal to-hit, area/self-targeted skip the reach
+  roll. Then the effect/damage resolves.
 
 ### Table-confirmable conventions (edit `CONVENTIONS` in `js/dice/hero.js`)
 
