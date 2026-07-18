@@ -527,6 +527,12 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
       statGrid(character.derived, DERIVED_ORDER, DERIVED_NAMES, "stat-grid derived-grid")));
   }
 
+  // Hit-location selector — applies to the next single-target attack. Sits
+  // above the maneuvers/powers it modifies.
+  if (typeof onSetHitLocation === "function") {
+    root.appendChild(section("Hit Location", hitLocationBar(pendingLocation, onSetHitLocation)));
+  }
+
   if (character.maneuvers && character.maneuvers.length) {
     root.appendChild(section("Martial Arts",
       el("div", { class: "maneuver-list" },
@@ -545,11 +551,6 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
 
   if (character.xp) {
     root.appendChild(section("Experience", xpTracker(character, onHealthChange)));
-  }
-
-  // Hit-location selector — applies to the next single-target attack.
-  if (typeof onSetHitLocation === "function") {
-    root.appendChild(section("Hit Location", hitLocationBar(pendingLocation, onSetHitLocation)));
   }
 
   if (character.powers && character.powers.length) {
