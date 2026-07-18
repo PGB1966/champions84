@@ -264,31 +264,41 @@ function hitLocationBar(pending, onSetHitLocation) {
   ]);
 }
 
-// Standard combat maneuvers table (universal). Damage maneuvers roll via
-// onRollPower (built power object); Grab maneuvers via onGrab (to-hit only).
-function standardManeuversTable(character, { onRollPower, onGrab }) {
+// Standard combat maneuvers table (universal). Actions by roll type:
+//   dice/velocity → onRollPower (STR damage); tohit → onToHitManeuver (to-hit
+//   only); multiple → onMultipleAttack (N escalating to-hit rolls); commit →
+//   onCommitManeuver (declare it to the log, no roll).
+function standardManeuversTable(character, { onRollPower, onToHitManeuver, onMultipleAttack, onCommitManeuver }) {
+  const btn = (label, onClick, cls = "roll-btn maneuver-btn") =>
+    el("button", { class: cls, type: "button", onClick }, label);
+
   const rows = standardManeuvers(character).map((m) => {
     let action = null;
-    if (m.roll && (onRollPower || onGrab)) {
-      if (m.roll.grab && typeof onGrab === "function") {
-        action = el("button", { class: "roll-btn maneuver-btn", type: "button",
-          onClick: () => onGrab(character, m) }, "Grab");
-      } else if (m.roll.velocity && typeof onRollPower === "function") {
-        const vel = el("input", { type: "number", class: "num vel-input", value: "0", min: "0", title: "velocity (m)" });
-        action = el("div", { class: "vel-roll" }, [
-          el("label", { class: "field" }, [el("span", {}, "v (m)"), vel]),
-          el("button", { class: "roll-btn maneuver-btn", type: "button", onClick: () => {
-            const v = parseInt(vel.value, 10) || 0;
-            const dice = velocityManeuverDice(m.roll.velocity, character, v);
-            const ocvMod = m.roll.velocity === "movethrough" ? movethroughOcvMod(v) : (m.roll.ocvMod || 0);
-            onRollPower(character, { name: `${m.name} (v ${v})`, type: "HTH", totalDice: `${dice}d6`, damageType: m.roll.damageType, ocvMod, endCost: m.roll.endCost || 0 });
-          } }, "Roll")
-        ]);
-      } else if (m.roll.dice && typeof onRollPower === "function") {
-        action = el("button", { class: "roll-btn maneuver-btn", type: "button", onClick: () =>
-          onRollPower(character, { name: m.name, type: "HTH", totalDice: `${m.roll.dice}d6`, damageType: m.roll.damageType, ocvMod: m.roll.ocvMod || 0, endCost: m.roll.endCost || 0 })
-        }, "Roll");
-      }
+    const r = m.roll;
+    if (r && r.tohit && onToHitManeuver) {
+      action = btn("Roll", () => onToHitManeuver(character, m));
+    } else if (r && r.commit && onCommitManeuver) {
+      action = btn("Commit", () => onCommitManeuver(character, m), "ghost-btn maneuver-btn");
+    } else if (r && r.multiple && onMultipleAttack) {
+      const count = el("input", { type: "number", class: "num vel-input", value: "2", min: "2", max: "12", title: "number of attacks" });
+      action = el("div", { class: "vel-roll" }, [
+        el("label", { class: "field" }, [el("span", {}, "×"), count]),
+        btn("Roll", () => onMultipleAttack(character, parseInt(count.value, 10) || 2))
+      ]);
+    } else if (r && r.velocity && onRollPower) {
+      const vel = el("input", { type: "number", class: "num vel-input", value: "0", min: "0", title: "velocity (m)" });
+      action = el("div", { class: "vel-roll" }, [
+        el("label", { class: "field" }, [el("span", {}, "v (m)"), vel]),
+        btn("Roll", () => {
+          const v = parseInt(vel.value, 10) || 0;
+          const dice = velocityManeuverDice(m.roll.velocity, character, v);
+          const ocvMod = m.roll.velocity === "movethrough" ? movethroughOcvMod(v) : (m.roll.ocvMod || 0);
+          onRollPower(character, { name: `${m.name} (v ${v})`, type: "HTH", totalDice: `${dice}d6`, damageType: m.roll.damageType, ocvMod, endCost: m.roll.endCost || 0 });
+        })
+      ]);
+    } else if (r && r.dice && onRollPower) {
+      action = btn("Roll", () =>
+        onRollPower(character, { name: m.name, type: "HTH", totalDice: `${m.roll.dice}d6`, damageType: m.roll.damageType, ocvMod: m.roll.ocvMod || 0, endCost: m.roll.endCost || 0 }));
     }
     return el("div", { class: "maneuver-row" }, [
       el("div", { class: "mvr-main" }, [
@@ -450,7 +460,7 @@ function plainList(items) {
   return el("ul", { class: "plain-list" }, items.map((s) => el("li", {}, s)));
 }
 
-export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, onGrab, onSetHitLocation, pendingLocation, vppHandlers, downed, locked } = {}) {
+export function renderCharacter(character, { onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover, onToHitManeuver, onMultipleAttack, onCommitManeuver, onSetHitLocation, pendingLocation, vppHandlers, downed, locked } = {}) {
   const root = el("article", { class: "sheet", dataset: { characterId: character.id } });
 
   // Identity header
@@ -540,8 +550,9 @@ export function renderCharacter(character, { onHealthChange, onRollPower, onRoll
   }
 
   // Standard combat maneuvers (universal to every character).
-  if (typeof onRollPower === "function" || typeof onGrab === "function") {
-    root.appendChild(section("Combat Maneuvers", standardManeuversTable(character, { onRollPower, onGrab })));
+  if (typeof onRollPower === "function") {
+    root.appendChild(section("Combat Maneuvers",
+      standardManeuversTable(character, { onRollPower, onToHitManeuver, onMultipleAttack, onCommitManeuver })));
   }
 
   // Movement — 6E standard for everyone, overridable per character.

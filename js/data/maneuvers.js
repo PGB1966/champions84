@@ -13,21 +13,21 @@ export function standardManeuvers(character) {
   const sd = strDamageDice(STR);
   const strEnd = Math.round(STR / 10); // END to use STR (1 END per 10 AP)
   return [
-    { id: "block", name: "Block", phase: "½", ocv: "+0", dcv: "+0", effect: "Block an attack; can Abort to it" },
-    { id: "brace", name: "Brace", phase: "½", ocv: "+2", dcv: "½", effect: "Negates the Range Modifier only" },
-    { id: "disarm", name: "Disarm", phase: "½", ocv: "−2", dcv: "+0", effect: "STR vs STR to knock a weapon away" },
-    { id: "dodge", name: "Dodge", phase: "½", ocv: "—", dcv: "+3", effect: "Dodge all attacks this phase; can Abort" },
-    { id: "grab", name: "Grab", phase: "½", ocv: "−1", dcv: "−2", effect: "Grab 2 limbs, then Squeeze/Slam/Throw", roll: { ocvMod: -1, grab: true } },
-    { id: "grabby", name: "Grab By", phase: "½", ocv: "−3", dcv: "−4", effect: "Move + Grab; +(v/10) to STR", roll: { ocvMod: -3, grab: true } },
+    { id: "block", name: "Block", phase: "½", ocv: "+0", dcv: "+0", effect: "Block an attack; can Abort to it", roll: { ocvMod: 0, tohit: true, note: "Block succeeds if you hit the attacker's OCV." } },
+    { id: "brace", name: "Brace", phase: "½", ocv: "+2", dcv: "½", effect: "Negates the Range Modifier only", roll: { commit: true } },
+    { id: "disarm", name: "Disarm", phase: "½", ocv: "−2", dcv: "+0", effect: "STR vs STR to knock a weapon away", roll: { ocvMod: -2, tohit: true, note: "On a hit, STR vs STR to knock the weapon away." } },
+    { id: "dodge", name: "Dodge", phase: "½", ocv: "—", dcv: "+3", effect: "Dodge all attacks this phase; can Abort", roll: { commit: true } },
+    { id: "grab", name: "Grab", phase: "½", ocv: "−1", dcv: "−2", effect: "Grab 2 limbs, then Squeeze/Slam/Throw", roll: { ocvMod: -1, tohit: true, note: "On a hit (target DCV ≤ hit number), STR vs STR to hold." } },
+    { id: "grabby", name: "Grab By", phase: "½", ocv: "−3", dcv: "−4", effect: "Move + Grab; +(v/10) to STR", roll: { ocvMod: -3, tohit: true, note: "Move + Grab; +(v/10) to STR for the grab." } },
     { id: "haymaker", name: "Haymaker", phase: "½*", ocv: "+0", dcv: "−5", effect: "+4 DC; takes +1 Segment to perform", roll: { ocvMod: 0, dice: sd + 4, damageType: "normal", endCost: strEnd } },
     { id: "moveby", name: "Move By", phase: "½", ocv: "−2", dcv: "−2", effect: "STR/2 + v/10; you take ⅓", roll: { ocvMod: -2, velocity: "moveby", damageType: "normal", endCost: strEnd } },
     { id: "movethrough", name: "Move Through", phase: "½", ocv: "−v/5", dcv: "−3", effect: "STR + v/6; you take ½ or full", roll: { velocity: "movethrough", damageType: "normal", endCost: strEnd } },
-    { id: "multiple", name: "Multiple Attack", phase: "1", ocv: "Var", dcv: "½", effect: "Attack multiple times at penalties" },
-    { id: "set", name: "Set", phase: "1", ocv: "+1", dcv: "+0", effect: "Ranged attacks only; take aim" },
-    { id: "shove", name: "Shove", phase: "½", ocv: "−1", dcv: "−1", effect: "Push target 1m per 5 STR" },
+    { id: "multiple", name: "Multiple Attack", phase: "1", ocv: "Var", dcv: "½", effect: "Attack multiple times at a cumulative −2 OCV per attack", roll: { multiple: true } },
+    { id: "set", name: "Set", phase: "1", ocv: "+1", dcv: "+0", effect: "Ranged attacks only; take aim", roll: { commit: true } },
+    { id: "shove", name: "Shove", phase: "½", ocv: "−1", dcv: "−1", effect: "Push target 1m per 5 STR", roll: { ocvMod: -1, tohit: true, note: "On a hit, push the target 1m per 5 STR." } },
     { id: "strike", name: "Strike", phase: "½", ocv: "+0", dcv: "+0", effect: "STR (or weapon) damage", roll: { ocvMod: 0, dice: sd, damageType: "normal", endCost: strEnd } },
     { id: "throw", name: "Throw", phase: "½", ocv: "+0", dcv: "+0", effect: "Throw a grabbed target for STR damage", roll: { ocvMod: 0, dice: sd, damageType: "normal", endCost: strEnd } },
-    { id: "trip", name: "Trip", phase: "½", ocv: "−1", dcv: "−2", effect: "Knock the target Prone" }
+    { id: "trip", name: "Trip", phase: "½", ocv: "−1", dcv: "−2", effect: "Knock the target Prone", roll: { ocvMod: -1, tohit: true, note: "On a hit, the target is knocked Prone." } }
   ];
 }
 

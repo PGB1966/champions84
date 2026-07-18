@@ -160,15 +160,39 @@ function consumeHitLocation(isAoe) {
   return { location: locationByName(sel), rollInfo: null };
 }
 
-// Grab (and Grab By): a to-hit at the maneuver's OCV penalty; success grabs.
-function onGrab(character, maneuver) {
+// To-hit maneuvers (Block, Disarm, Shove, Trip, Grab, Grab By): a to-hit at the
+// maneuver's OCV modifier, plus its effect note.
+function onToHitManeuver(character, maneuver) {
   const ocvMod = maneuver.roll?.ocvMod || 0;
   const r = rollToHit({ ocv: (character.derived?.OCV ?? 0) + ocvMod, rng: Math.random });
-  const lines = [
-    describeToHit(r),
-    "Grab: success if the target's DCV ≤ the hit number, then STR vs STR to hold."
-  ];
+  const lines = [describeToHit(r)];
+  if (maneuver.roll?.note) lines.push(maneuver.roll.note);
   addRoll({ who: whoLabel(character), label: `${maneuver.name} (OCV ${ocvMod >= 0 ? "+" : ""}${ocvMod})`, lines });
+  route();
+}
+
+// Multiple Attack: N to-hit rolls at an escalating −2 OCV per attack.
+function onMultipleAttack(character, count) {
+  const n = Math.max(2, Math.min(12, count || 2));
+  const ocv = character.derived?.OCV ?? 0;
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    const pen = -2 * i;
+    const r = rollToHit({ ocv: ocv + pen, rng: Math.random });
+    lines.push(`Attack ${i + 1} (OCV ${pen >= 0 ? "+" : ""}${pen}) 3d6 [${r.faces.join(",")}] = ${r.total} — hits DCV ${r.hitsDcv}`);
+  }
+  lines.push("Roll each hit's damage separately; you're at ½ DCV this phase.");
+  addRoll({ who: whoLabel(character), label: `Multiple Attack (×${n})`, lines });
+  route();
+}
+
+// Commit maneuvers (Brace, Dodge, Set): declare it to the shared log, no roll.
+function onCommitManeuver(character, maneuver) {
+  addRoll({
+    who: whoLabel(character),
+    label: `Commits: ${maneuver.name}`,
+    lines: [`Ph ${maneuver.phase} · OCV ${maneuver.ocv} · DCV ${maneuver.dcv}`, maneuver.effect]
+  });
   route();
 }
 
@@ -387,7 +411,7 @@ function sheetOptions(character) {
   const downed = isDowned(character);
   return {
     onHealthChange, onRollPower, onRollCheck, onTogglePowerSet, onClearBoosts, onRecover,
-    onGrab, onSetHitLocation, pendingLocation, vppHandlers,
+    onToHitManeuver, onMultipleAttack, onCommitManeuver, onSetHitLocation, pendingLocation, vppHandlers,
     downed, locked: downed && !IS_GM
   };
 }

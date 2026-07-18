@@ -193,10 +193,15 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
   — a deliberate reminder to subtract defenses before multiplying. Knockback
   uses the raw (pre-multiplier) BODY.
 - **Standard combat maneuvers** — every sheet has a "Combat Maneuvers" section
-  (`js/data/maneuvers.js`). Strike/Haymaker/Throw roll STR damage
-  (`strDamageDice` = STR÷5) and deduct STR END (STR÷10); Move By / Move Through
-  take a velocity input (formulas are best-effort table readings — verify);
-  Grab/Grab By roll to-hit only. The rest are reference rows.
+  (`js/data/maneuvers.js`), each with an action:
+  - **Damage** (Strike/Haymaker/Throw): roll STR damage (`strDamageDice`=STR÷5)
+    and deduct STR END (STR÷10). Move By / Move Through add a velocity input.
+  - **To-hit** (Block/Disarm/Shove/Trip/Grab/Grab By): a to-hit roll at the
+    maneuver's OCV mod, plus its effect note.
+  - **Multiple Attack**: pick a count → that many to-hit rolls at an escalating
+    −2 OCV per attack.
+  - **Commit** (Brace/Dodge/Set): a button that posts the declared maneuver
+    (mods + effect) to the shared log — no roll.
 - **Double Helix VPP delivery rolls** — touch powers roll a **Grab** (OCV −1)
   first, ranged powers roll a normal to-hit, area/self-targeted skip the reach
   roll. Then the effect/damage resolves.
