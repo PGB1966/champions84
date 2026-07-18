@@ -198,11 +198,13 @@ export function rollPower({ power, ocv = 0, dice, hitLocation = null, rng } = {}
     damage = rollNormalDamage({ dice: useDice, hitLocation, rng });
   }
 
-  // Knockback for physical attacks that did BODY. A power's knockbackBonus
-  // reduces the knockback dice (more knockback) — table-confirmable, see README.
+  // Knockback for physical attacks that did BODY. Uses the raw rolled BODY
+  // (not the located-multiplied value) so the log stays pre-multiplier. A
+  // power's knockbackBonus reduces the knockback dice (more knockback).
   if (damage && PHYSICAL_TYPES.has(power.type)) {
+    const kbBody = damage.baseBody != null ? damage.baseBody : damage.body;
     const kbDice = CONVENTIONS.knockbackDice - (power.knockbackBonus || 0);
-    knockback = rollKnockback({ body: damage.body, kbDice, rng });
+    knockback = rollKnockback({ body: kbBody, kbDice, rng });
   }
 
   return { kind: "power", power, ocv, ocvMod, fullDice, dice: useDice, pulled, hitLocation, toHit, damage, knockback };

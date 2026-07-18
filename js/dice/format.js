@@ -43,14 +43,16 @@ export function describeVpp(entry, r) {
 
 export function describeNormal(r) {
   if (r.hitLocation) {
-    return `${r.dice}d6 normal [${diceList(r.faces)}] = ${r.baseStun}→${r.stun} STUN (×${r.hitLocation.nStun}), ${r.baseBody}→${r.body} BODY (×${r.hitLocation.bodyx}) — pre-defense`;
+    // Show the raw roll + the location multipliers only — NOT the product, so
+    // the table remembers to subtract defenses before multiplying.
+    return `${r.dice}d6 normal [${diceList(r.faces)}] = ${r.baseStun} STUN, ${r.baseBody} BODY (roll) — subtract defenses, then ×${r.hitLocation.nStun} STUN / ×${r.hitLocation.bodyx} BODY`;
   }
   return `${r.dice}d6 normal [${diceList(r.faces)}] = ${r.stun} STUN, ${r.body} BODY`;
 }
 
 export function describeKilling(r) {
   if (r.hitLocation) {
-    return `${r.dice}d6 killing [${diceList(r.bodyFaces)}] = ${r.baseBody}→${r.body} BODY (×${r.hitLocation.bodyx}), STUN = ${r.body} × ${r.hitLocation.stunx} = ${r.stun} — pre-defense`;
+    return `${r.dice}d6 killing [${diceList(r.bodyFaces)}] = ${r.baseBody} BODY (roll) — subtract rPD, then ×${r.hitLocation.bodyx} BODY and STUN = that BODY × ${r.hitLocation.stunx}`;
   }
   const mult = r.multiplierMode === "1d6" ? `1d6=${r.multiplierRoll}` : `½d6=${r.multiplier}`;
   return `${r.dice}d6 killing [${diceList(r.bodyFaces)}] = ${r.body} BODY × ${r.multiplier} (${mult}) = ${r.stun} STUN`;

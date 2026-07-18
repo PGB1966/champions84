@@ -281,12 +281,12 @@ function standardManeuversTable(character, { onRollPower, onGrab }) {
             const v = parseInt(vel.value, 10) || 0;
             const dice = velocityManeuverDice(m.roll.velocity, character, v);
             const ocvMod = m.roll.velocity === "movethrough" ? movethroughOcvMod(v) : (m.roll.ocvMod || 0);
-            onRollPower(character, { name: `${m.name} (v ${v})`, type: "HTH", totalDice: `${dice}d6`, damageType: m.roll.damageType, ocvMod });
+            onRollPower(character, { name: `${m.name} (v ${v})`, type: "HTH", totalDice: `${dice}d6`, damageType: m.roll.damageType, ocvMod, endCost: m.roll.endCost || 0 });
           } }, "Roll")
         ]);
       } else if (m.roll.dice && typeof onRollPower === "function") {
         action = el("button", { class: "roll-btn maneuver-btn", type: "button", onClick: () =>
-          onRollPower(character, { name: m.name, type: "HTH", totalDice: `${m.roll.dice}d6`, damageType: m.roll.damageType, ocvMod: m.roll.ocvMod || 0 })
+          onRollPower(character, { name: m.name, type: "HTH", totalDice: `${m.roll.dice}d6`, damageType: m.roll.damageType, ocvMod: m.roll.ocvMod || 0, endCost: m.roll.endCost || 0 })
         }, "Roll");
       }
     }

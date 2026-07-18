@@ -189,13 +189,14 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
   `js/dice/hero.js`). Pick a called shot (adds its OCV penalty and STUN/BODY
   multipliers) or **Random** (3d6 at attack time); it applies to the next
   single-target attack, then clears. Ignored for area attacks (`aoe: true`).
-  Multipliers apply to the raw pre-defense numbers (the table's "after defenses"
-  order can't be automated); the log shows base→located.
+  The log shows the **raw roll and the location multiplier but not the product**
+  — a deliberate reminder to subtract defenses before multiplying. Knockback
+  uses the raw (pre-multiplier) BODY.
 - **Standard combat maneuvers** — every sheet has a "Combat Maneuvers" section
   (`js/data/maneuvers.js`). Strike/Haymaker/Throw roll STR damage
-  (`strDamageDice` = STR÷5); Move By / Move Through take a velocity input
-  (formulas are best-effort table readings — verify); Grab/Grab By roll to-hit
-  only. The rest are reference rows. STR maneuvers don't yet deduct END.
+  (`strDamageDice` = STR÷5) and deduct STR END (STR÷10); Move By / Move Through
+  take a velocity input (formulas are best-effort table readings — verify);
+  Grab/Grab By roll to-hit only. The rest are reference rows.
 - **Double Helix VPP delivery rolls** — touch powers roll a **Grab** (OCV −1)
   first, ranged powers roll a normal to-hit, area/self-targeted skip the reach
   roll. Then the effect/damage resolves.
