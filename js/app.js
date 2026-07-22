@@ -59,6 +59,11 @@ function applyCharOverrides(data) {
         }
       }
     }
+    if (ov.xp && c.xp) {
+      if (typeof ov.xp.earned === "number") c.xp.earned = Math.max(0, ov.xp.earned);
+      if (typeof ov.xp.spent === "number") c.xp.spent = Math.max(0, ov.xp.spent);
+      if (c.xp.spent > c.xp.earned) c.xp.spent = c.xp.earned; // spent can't exceed earned
+    }
   }
   route();
 }

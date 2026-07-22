@@ -171,8 +171,8 @@ The GM dashboard and controls only appear in **GM mode**, opted into with a
   rule above).
 - **GM-editable stats** — each dashboard card has number inputs for the eight
   characteristics, the combat/defense values (OCV/DCV/OMCV/DMCV/PD/ED/rPD/rED,
-  MD), **STUN/BODY/END totals (max)**, REC, and movement (incl. Vivian's
-  Clinging). 6E treats these as independent (not figured), so they're all
+  MD), **STUN/BODY/END totals (max)**, REC, movement (incl. Vivian's Clinging),
+  and **XP (Earned/Spent)**. 6E treats these as independent (not figured), so they're all
   editable — update them when a player spends XP, no code change needed. An edit
   writes the stat keys to `characters/<id>` (via `update`) and syncs live to
   that player's sheet (needs the `characters` DB rule).

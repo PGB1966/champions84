@@ -320,7 +320,7 @@ function standardManeuversTable(character, { onRollPower, onToHitManeuver, onMul
 // REC, and movement — all independently editable (6E doesn't figure them) and
 // synced to the player's sheet. Any change writes the whole override object.
 function gmEditor(character, onSetChar) {
-  const inputs = { characteristics: {}, derived: {}, movement: {}, maxima: {}, rec: null };
+  const inputs = { characteristics: {}, derived: {}, movement: {}, maxima: {}, xp: {}, rec: null };
   const num = (i) => parseInt(i.value, 10) || 0;
 
   const commit = () => {
@@ -336,6 +336,7 @@ function gmEditor(character, onSetChar) {
     const dv = fill("derived"); if (dv) ov.derived = dv;
     const mx = fill("maxima"); if (mx) ov.maxima = mx;
     const mv = fill("movement"); if (mv) ov.movement = mv;
+    const xp = fill("xp"); if (xp) ov.xp = xp;
     if (inputs.rec) ov.rec = num(inputs.rec);
     onSetChar(character.id, ov);
   };
@@ -375,6 +376,13 @@ function gmEditor(character, onSetChar) {
   if (character.rec != null) recMove.push(cell("REC", character.rec, "rec"));
   for (const k of moveOrder) recMove.push(cell(`${k} (m)`, movement[k], "movement", k));
   group("REC & Movement", recMove);
+
+  if (character.xp) {
+    group("Experience (XP)", [
+      cell("Earned", character.xp.earned || 0, "xp", "earned"),
+      cell("Spent", character.xp.spent || 0, "xp", "spent")
+    ]);
+  }
 
   return el("div", { class: "char-editor" }, [
     el("div", { class: "char-editor-head" }, "GM edit — synced to player"),
